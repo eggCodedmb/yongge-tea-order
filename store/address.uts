@@ -1,0 +1,133 @@
+import { defineStore } from 'pinia'
+import { request } from '@/utils/request.uts'
+
+export interface AddressItem {
+	id: string;
+	name: string;
+	phone: string;
+	province: string;
+	city: string;
+	district: string;
+	detail: string;
+	isDefault: boolean;
+	label: string;
+}
+
+export const useAddressStore = defineStore('address', {
+	state: () => ({
+		addresses: [] as AddressItem[],
+		selectedAddressId: ''
+	}),
+	getters: {
+		selectedAddress(): AddressItem | null {
+			if (this.selectedAddressId != '') {
+				const found = this.addresses.find(a => a.id === this.selectedAddressId)
+				if (found) return found
+			}
+			return this.addresses.find(a => a.isDefault) || (this.addresses.length > 0 ? this.addresses[0] : null)
+		}
+	},
+	actions: {
+		async fetchAddresses() {
+			try {
+				const res = await request<any>({
+					url: '/address/findAll',
+					method: 'POST'
+				})
+				const list = res.result.list as any[]
+				this.addresses = list.map(item => this.mapBackendToFrontend(item))
+			} catch (e) {
+				console.error('Fetch addresses failed', e)
+			}
+		},
+
+		async addAddress(address: AddressItem) {
+			try {
+				const data = this.mapFrontendToBackend(address)
+				await request<any>({
+					url: '/address',
+					method: 'POST',
+					data: data
+				})
+				await this.fetchAddresses()
+			} catch (e) {
+				console.error('Add address failed', e)
+			}
+		},
+
+		async updateAddress(address: AddressItem) {
+			try {
+				const data = this.mapFrontendToBackend(address)
+				await request<any>({
+					url: '/address/edit',
+					method: 'POST',
+					data: { ...data, id: parseInt(address.id) }
+				})
+				await this.fetchAddresses()
+			} catch (e) {
+				console.error('Update address failed', e)
+			}
+		},
+
+		async deleteAddress(id: string) {
+			try {
+				await request<any>({
+					url: `/address/${id}`,
+					method: 'DELETE'
+				})
+				await this.fetchAddresses()
+			} catch (e) {
+				console.error('Delete address failed', e)
+			}
+		},
+
+		async setDefault(id: string) {
+			try {
+				await request<any>({
+					url: '/address/update_default',
+					method: 'POST',
+					data: { id: parseInt(id) }
+				})
+				await this.fetchAddresses()
+			} catch (e) {
+				console.error('Set default address failed', e)
+			}
+		},
+
+		setSelectedAddressId(id: string) {
+			this.selectedAddressId = id
+		},
+
+		mapBackendToFrontend(item: any): AddressItem {
+			const areas = (item.area_name as string || '').split(' ')
+			const tags = ['家', '公司', '学校']
+			return {
+				id: item.id.toString(),
+				name: item.consignee,
+				phone: item.phone,
+				province: areas[0] || '',
+				city: areas[1] || '',
+				district: areas[2] || '',
+				detail: item.address,
+				isDefault: item.is_default === 1 || item.is_default === true,
+				label: tags[item.tag] || ''
+			}
+		},
+
+		mapFrontendToBackend(address: AddressItem): any {
+			const tags = ['家', '公司', '学校']
+			let tagIdx = tags.indexOf(address.label)
+			if (tagIdx === -1) tagIdx = 0
+			
+			return {
+				consignee: address.name,
+				phone: address.phone,
+				address: address.detail,
+				area_name: `${address.province} ${address.city} ${address.district}`,
+				area_code: '000000', // 简易版固定代码
+				tag: tagIdx,
+				is_default: address.isDefault
+			}
+		}
+	}
+})

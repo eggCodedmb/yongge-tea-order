@@ -1,0 +1,31 @@
+import { defineStore } from 'pinia'
+
+export interface UserInfo {
+	nickname: string;
+	avatar: string;
+	phone: string;
+	points: number;
+}
+
+export const useUserStore = defineStore('user', {
+	state: () => ({
+		userInfo: (uni.getStorageSync('user_info') as UserInfo | null),
+		token: uni.getStorageSync('access_token') as string || ''
+	}),
+	actions: {
+		setUserInfo(info: UserInfo) {
+			this.userInfo = info
+			uni.setStorageSync('user_info', info)
+		},
+		setToken(token: string) {
+			this.token = token
+			uni.setStorageSync('access_token', token)
+		},
+		logout() {
+			this.userInfo = null
+			this.token = ''
+			uni.removeStorageSync('user_info')
+			uni.removeStorageSync('access_token')
+		}
+	}
+})

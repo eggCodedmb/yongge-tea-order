@@ -1,0 +1,21 @@
+{
+    "name": "uni-pay-co",
+    "dependencies": {
+        "uni-config-center": "file:../common/uni-config-center",
+        "uni-id-common": "file:../common/uni-id-common",
+        "uni-pay": "file:../common/uni-pay"
+    },
+    "extensions": {},
+    "cloudfunction-config": {
+        "concurrency": 1,
+        "memorySize": 512,
+        "path": "/uni-pay-co",
+        "timeout": 60,
+        "triggers": [],
+        "runtime": "Nodejs18"
+    },
+    "origin-plugin-dev-name": "uni-pay-x",
+    "origin-plugin-version": "1.2.2",
+    "plugin-dev-name": "uni-pay-x",
+    "plugin-version": "1.2.2"
+}

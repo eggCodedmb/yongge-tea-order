@@ -1,0 +1,182 @@
+/**
+ * 支付工具函数
+ * 封装 uni-pay-x 相关的支付逻辑
+ */
+
+/**
+ * 支付参数接口
+ */
+export interface PaymentOptions {
+	provider?: string // 支付方式：'wxpay' | 'alipay' | '' (留空显示选择弹窗)
+	totalFee: number // 支付金额（单位：分）
+	orderNo: string // 业务订单号
+	outTradeNo: string // 支付订单号（唯一）
+	description: string // 订单描述
+	type?: string // 订单类型
+	custom?: UTSJSONObject // 自定义数据
+}
+
+/**
+ * 支付结果接口
+ */
+export interface PaymentResult {
+	errCode: number
+	errMsg?: string
+	out_trade_no?: string
+	order_no?: string
+	transaction_id?: string
+	pay_order?: UTSJSONObject
+}
+
+/**
+ * 生成支付订单号
+ * @param orderId 业务订单ID
+ * @returns 唯一的支付订单号
+ */
+export function generateOutTradeNo(orderId: number | string): string {
+	const timestamp = Date.now()
+	const random = Math.floor(Math.random() * 10000)
+	return `PAY_${timestamp}_${orderId}_${random}`
+}
+
+/**
+ * 生成业务订单号
+ * @param orderId 业务订单ID
+ * @returns 业务订单号
+ */
+export function generateOrderNo(orderId: number | string): string {
+	const timestamp = Date.now()
+	return `ORDER_${orderId}_${timestamp}`
+}
+
+/**
+ * 元转分
+ * @param yuan 金额（元）
+ * @returns 金额（分）
+ */
+export function yuanToFen(yuan: number | string): number {
+	const amount = typeof yuan === 'string' ? parseFloat(yuan) : yuan
+	return Math.round(amount * 100)
+}
+
+/**
+ * 分转元
+ * @param fen 金额（分）
+ * @returns 金额（元，保留2位小数）
+ */
+export function fenToYuan(fen: number): string {
+	return (fen / 100).toFixed(2)
+}
+
+/**
+ * 获取当前平台支持的支付方式
+ * @returns 支付方式数组
+ */
+export function getSupportedProviders(): Array<string> {
+	const providers: Array<string> = []
+
+	// #ifdef MP-WEIXIN
+	providers.push('wxpay')
+	// #endif
+
+	// #ifdef MP-ALIPAY
+	providers.push('alipay')
+	// #endif
+
+	// #ifdef APP || H5
+	providers.push('wxpay')
+	providers.push('alipay')
+	// #endif
+
+	return providers
+}
+
+/**
+ * 获取默认支付方式
+ * @returns 默认支付方式
+ */
+export function getDefaultProvider(): string {
+	// #ifdef MP-WEIXIN
+	return 'wxpay'
+	// #endif
+
+	// #ifdef MP-ALIPAY
+	return 'alipay'
+	// #endif
+
+	// #ifdef APP || H5
+	return '' // 留空，让用户选择
+	// #endif
+}
+
+/**
+ * 构建支付参数
+ * @param options 支付选项
+ * @returns uni-pay-x 所需的支付参数
+ */
+export function buildPaymentParams(options: PaymentOptions): UTSJSONObject {
+	return {
+		provider: options.provider || getDefaultProvider(),
+		total_fee: options.totalFee,
+		order_no: options.orderNo,
+		out_trade_no: options.outTradeNo,
+		description: options.description,
+		type: options.type || 'goods',
+		custom: options.custom || {} as UTSJSONObject
+	} as UTSJSONObject
+}
+
+/**
+ * 验证支付金额
+ * @param amount 金额（元）
+ * @returns 是否有效
+ */
+export function validatePaymentAmount(amount: number | string): boolean {
+	const num = typeof amount === 'string' ? parseFloat(amount) : amount
+
+	if (isNaN(num)) {
+		return false
+	}
+
+	if (num <= 0) {
+		return false
+	}
+
+	// 最大支付金额限制（例如：10000元）
+	if (num > 10000) {
+		return false
+	}
+
+	return true
+}
+
+/**
+ * 格式化支付错误信息
+ * @param errCode 错误码
+ * @param errMsg 错误信息
+ * @returns 用户友好的错误提示
+ */
+export function formatPaymentError(errCode: number, errMsg?: string): string {
+	// 用户取消支付
+	if (errCode === 700601 || (errMsg && errMsg.indexOf('cancel') > -1)) {
+		return '已取消支付'
+	}
+
+	// 支付超时
+	if (errCode === 700602) {
+		return '支付超时，请重试'
+	}
+
+	// 余额不足
+	if (errMsg && errMsg.indexOf('余额不足') > -1) {
+		return '账户余额不足'
+	}
+
+	// 网络错误
+	if (errMsg && (errMsg.indexOf('网络') > -1 || errMsg.indexOf('network') > -1)) {
+		return '网络异常，请检查网络连接'
+	}
+
+	// 默认错误信息
+	return errMsg || '支付失败，请重试'
+}

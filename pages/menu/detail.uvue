@@ -1,0 +1,356 @@
+<template>
+	<view class="page-wrapper">
+		<scroll-view class="detail-scroll" scroll-y v-if="product != null">
+			<!-- 商品大图 -->
+			<image :src="formatImageUrl(product!.image)" class="product-image" mode="aspectFill"></image>
+			
+			<view class="content-box">
+				<view class="info-section">
+					<text class="product-name">{{product?.name}}</text>
+					<text class="product-desc">{{product?.desc}}</text>
+					<text class="product-price">￥{{currentTotalPrice}}</text>
+				</view>
+				
+				<!-- 规格选择区 -->
+				<view class="spec-section" v-if="specs.length > 0">
+					<view v-for="spec in specs" :key="spec.id" class="spec-group">
+						<text class="spec-group-title">{{spec.name}}</text>
+						<view class="spec-options">
+							<view 
+								v-for="opt in spec.options" 
+								:key="opt.id" 
+								:class="['spec-option', isSpecSelected(spec.name, opt.name) ? 'active' : '']"
+								@click="selectSpec(spec.name, opt.name, opt.price_delta)"
+							>
+								<text :class="['spec-option-text', isSpecSelected(spec.name, opt.name) ? 'active-text' : '']">
+									{{opt.name}}{{opt.price_delta > 0 ? '(+' + opt.price_delta + ')' : ''}}
+								</text>
+							</view>
+						</view>
+					</view>
+				</view>
+				
+				<view style="height: 160rpx;"></view>
+			</view>
+		</scroll-view>
+		
+		<view class="loading-full" v-else>
+			<text class="loading-text">正在加载详情...</text>
+		</view>
+
+		<!-- 底部加入购物车栏 -->
+		<view class="footer-bar" v-if="product != null">
+			<view class="footer-left">
+				<text class="footer-price">￥{{currentTotalPrice}}</text>
+				<text class="footer-specs">{{selectedSpecsValues.join('/')}}</text>
+			</view>
+			<view class="add-cart-btn" @click="handleAddToCart">
+				<text class="add-cart-text">加入购物车</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed, onMounted } from 'vue'
+	import { useCartStore, CartItem } from '@/store/cart.uts'
+	import { request } from '@/utils/request.uts'
+
+	interface SpecOption {
+		id: number;
+		name: string;
+		price_delta: number;
+	}
+
+	interface SpecGroup {
+		id: number;
+		name: string;
+		options: SpecOption[];
+	}
+
+	interface ProductDetail {
+		id: number;
+		name: string;
+		desc: string;
+		basePrice: number;
+		image: string;
+		specs: SpecGroup[];
+	}
+
+	const cartStore = useCartStore()
+	const product = ref<ProductDetail | null>(null)
+	
+	// 使用普通对象配合 ref 确保在 UTS 中的响应式更可靠
+	const selectedSpecsMap = ref<UTSJSONObject>({})
+	const selectedSpecsPriceMap = ref<UTSJSONObject>({})
+
+	const specs = computed(() : SpecGroup[] => {
+		return product.value?.specs || [] as SpecGroup[]
+	})
+
+	onMounted(() => {
+		const data = uni.getStorageSync('current_product')
+		if (data != null) {
+			const basicInfo = JSON.parse(data as string) as UTSJSONObject
+			fetchProductDetail(basicInfo['id'] as number)
+		}
+	})
+
+	async function fetchProductDetail(id: number) {
+		try {
+			const res = await request<any>({ url: `/goods/detail/${id}` })
+			const raw = res.result
+			
+			// 严格映射后端 spec_groups -> SpecGroup
+			const mappedSpecs = (raw.spec_groups || []).map((sg : any) : SpecGroup => {
+				return {
+					id: sg.id,
+					name: sg.name,
+					// 严格映射后端 spec_options -> SpecOption
+					options: (sg.spec_options || []).map((so : any) : SpecOption => {
+						return {
+							id: so.id,
+							name: so.name,
+							price_delta: parseFloat(so.price_delta || '0')
+						} as SpecOption
+					})
+				} as SpecGroup
+			})
+
+			product.value = {
+				id: raw.id,
+				name: raw.goods_name,
+				desc: raw.goods_detail || '美味推荐',
+				basePrice: parseFloat(raw.goods_price || '0'),
+				image: raw.goods_img || '',
+				specs: mappedSpecs
+			} as ProductDetail
+
+			// 初始化默认选择
+			mappedSpecs.forEach((spec : SpecGroup) => {
+				if (spec.options.length > 0) {
+					selectedSpecsMap.value[spec.name] = spec.options[0].name
+					selectedSpecsPriceMap.value[spec.name] = spec.options[0].price_delta
+				}
+			})
+		} catch (e) {
+			console.error('Fetch product detail failed', e)
+		}
+	}
+
+	const selectedSpecsValues = computed(() : string[] => {
+		const res : string[] = []
+		const obj = selectedSpecsMap.value
+		Object.keys(obj).forEach((key : string) => {
+			res.push(obj[key] as string)
+		})
+		return res
+	})
+
+	const currentTotalPrice = computed(() : number => {
+		let total = product.value?.basePrice || 0
+		const obj = selectedSpecsPriceMap.value
+		Object.keys(obj).forEach((key : string) => {
+			total += (obj[key] as number)
+		})
+		return total
+	})
+
+	function isSpecSelected(specName: string, optionName: string): boolean {
+		return selectedSpecsMap.value[specName] === optionName
+	}
+
+	function selectSpec(specName: string, optionName: string, priceDelta: number) {
+		selectedSpecsMap.value[specName] = optionName
+		selectedSpecsPriceMap.value[specName] = priceDelta
+	}
+
+	function formatImageUrl(url: string): string {
+		if (url != '' && url.startsWith('http')) return url
+		if (url == '') return '/static/logo.png'
+		return 'http://127.0.0.1:8800' + url
+	}
+
+	function handleAddToCart() {
+		if (product.value == null) return
+		
+		const item: CartItem = {
+			id: product.value!.id,
+			name: product.value!.name,
+			price: product.value!.basePrice,
+			quantity: 1,
+			specs: selectedSpecsValues.value,
+			toppings: [],
+			totalPrice: currentTotalPrice.value,
+			image: product.value!.image
+		}
+		
+		cartStore.addToCart(item)
+		uni.showToast({ title: '已加入购物车', icon: 'success' })
+		setTimeout(() => {
+			uni.navigateBack()
+		}, 1000)
+	}
+</script>
+
+<style>
+	.page-wrapper {
+		display: flex;
+		flex-direction: column;
+		height: 100vh;
+		background-color: #fff;
+	}
+
+	.detail-scroll {
+		flex: 1;
+		height: 100%;
+	}
+
+	.product-image {
+		width: 100%;
+		height: 600rpx;
+		background-color: #f8f8f8;
+	}
+
+	.content-box {
+		padding: 30rpx;
+	}
+
+	.info-section {
+		margin-bottom: 40rpx;
+	}
+
+	.product-name {
+		font-size: 44rpx;
+		font-weight: bold;
+		color: #333;
+		display: block;
+	}
+
+	.product-desc {
+		font-size: 28rpx;
+		color: #999;
+		margin-top: 20rpx;
+		display: block;
+	}
+
+	.product-price {
+		font-size: 48rpx;
+		color: #ff4d4f;
+		font-weight: bold;
+		margin-top: 30rpx;
+		display: block;
+	}
+
+	.spec-section {
+		border-top: 1rpx solid #f5f5f5;
+		padding-top: 40rpx;
+	}
+
+	.spec-group {
+		margin-bottom: 40rpx;
+	}
+
+	.spec-group-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333;
+		margin-bottom: 24rpx;
+		display: block;
+	}
+
+	.spec-options {
+		display: flex;
+		flex-direction: row;
+		flex-wrap: wrap;
+	}
+
+	.spec-option {
+		background-color: #f8f8f8;
+		padding: 16rpx 30rpx;
+		border-radius: 12rpx;
+		margin-right: 20rpx;
+		margin-bottom: 20rpx;
+		border: 1rpx solid transparent;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.spec-option.active {
+		background-color: #e6f9f5;
+		border-color: #00cc99;
+	}
+
+	.spec-option-text {
+		font-size: 26rpx;
+		color: #666;
+	}
+
+	.active-text {
+		color: #00cc99;
+		font-weight: bold;
+	}
+
+	.footer-bar {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: #fff;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 40rpx;
+		padding-bottom: calc(20rpx + constant(safe-area-inset-bottom));
+		padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
+		box-shadow: 0 -2rpx 20rpx rgba(0,0,0,0.05);
+		z-index: 100;
+	}
+
+	.footer-left {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.footer-price {
+		font-size: 40rpx;
+		color: #ff4d4f;
+		font-weight: bold;
+	}
+
+	.footer-specs {
+		font-size: 22rpx;
+		color: #999;
+	}
+
+	.add-cart-btn {
+		background-color: #00cc99;
+		width: 260rpx;
+		height: 88rpx;
+		border-radius: 44rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.add-cart-text {
+		color: #fff;
+		font-size: 32rpx;
+		font-weight: bold;
+	}
+	
+	.loading-full {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		padding-top: 200rpx;
+	}
+
+	.loading-text {
+		color: #999;
+		font-size: 28rpx;
+	}
+</style>
