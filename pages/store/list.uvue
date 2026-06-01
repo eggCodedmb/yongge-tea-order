@@ -1,0 +1,178 @@
+<template>
+	<view class="container">
+		<view class="search-bar">
+			<uni-search-bar radius="100" placeholder="搜索门店" clearButton="auto" cancelButton="none" @confirm="search" @input="onInput" @clear="clearSearch" @cancel="clearSearch" />
+		</view>
+		
+		<scroll-view class="store-list" scroll-y>
+			<view v-for="(item, index) in stores" :key="item.id" class="store-item card" @click="selectStore(item)">
+				<view class="store-main">
+					<view class="store-info">
+						<text class="store-name">{{item.name}}</text>
+						<text class="store-address">{{item.address}}</text>
+						<view class="store-time">
+							<text class="time-label">营业时间：</text>
+							<text class="time-value">{{formatBusinessHours(item.business_hours)}}</text>
+						</view>
+					</view>
+					<view class="store-status">
+						<text class="distance">{{formatDistance(item.distance)}}</text>
+						<text class="status-tag">营业中</text>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, onMounted } from 'vue'
+	import { request } from '@/utils/request.uts'
+	import { formatDistance, formatBusinessHours } from '@/utils/format.uts'
+	import { debounce } from '@/utils/common.uts'
+	import { useAppStore, StoreInfo } from '@/store/app.uts'
+
+	const appStore = useAppStore()
+	const stores = ref([] as StoreInfo[])
+
+	onMounted(() => {
+		getNearbyStores()
+	})
+
+	function getNearbyStores(keyword : string = '') {
+		uni.getLocation({
+			type: 'gcj02',
+			success: (res) => {
+				request<any>({
+					url: '/store/nearby',
+					data: {
+						longitude: res.longitude,
+						latitude: res.latitude,
+						keyword: keyword
+					}
+				}).then(data => {
+					stores.value = data.result.list as StoreInfo[]
+				})
+			},
+			fail: () => {
+				// 如果定位失败，获取所有门店
+				getAllStores(keyword)
+			}
+		})
+	}
+
+	function getAllStores(keyword : string = '') {
+                request<any>({
+                        url: '/store/all',
+                        data: { keyword: keyword }
+                }).then(data => {
+                        stores.value = data.result.list as StoreInfo[]
+                })
+        }
+
+	
+
+	function selectStore(store : StoreInfo) {
+		appStore.setStore(store)
+		uni.navigateBack()
+	}
+
+	
+	
+	const debouncedSearch = debounce((keyword : string) => {
+		getNearbyStores(keyword)
+	}, 500)
+
+	function onInput(e : any) {
+		const keyword = e.value as string
+		debouncedSearch(keyword)
+	}
+
+	function clearSearch() {
+		getNearbyStores('')
+	}
+
+	function search(e : any) {
+		const keyword = e.value as string
+		getNearbyStores(keyword)
+	}
+</script>
+
+<style>
+	.container {
+		background-color: #f5f5f5;
+		min-height: 100vh;
+	}
+
+	.search-bar {
+		background-color: #ffffff;
+		padding: 10rpx 0;
+	}
+
+	.store-list {
+		height: calc(100vh - 120rpx);
+	}
+
+	.card {
+		background-color: #ffffff;
+		margin: 20rpx;
+		padding: 30rpx;
+		border-radius: 16rpx;
+	}
+
+	.store-main {
+		flex-direction: row;
+		justify-content: space-between;
+	}
+
+	.store-info {
+		flex: 1;
+	}
+
+	.store-name {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333333;
+		margin-bottom: 10rpx;
+	}
+
+	.store-address {
+		font-size: 26rpx;
+		color: #999999;
+		margin-bottom: 20rpx;
+	}
+
+	.store-time {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.time-label {
+		font-size: 24rpx;
+		color: #999999;
+	}
+
+	.time-value {
+		font-size: 24rpx;
+		color: #666666;
+	}
+
+	.store-status {
+		align-items: flex-end;
+		justify-content: space-between;
+	}
+
+	.distance {
+		font-size: 28rpx;
+		font-weight: bold;
+		color: #00cc99;
+	}
+
+	.status-tag {
+		font-size: 22rpx;
+		color: #00cc99;
+		background-color: #e6f9f5;
+		padding: 4rpx 12rpx;
+		border-radius: 6rpx;
+	}
+</style>

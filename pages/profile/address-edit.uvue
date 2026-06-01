@@ -1,0 +1,383 @@
+<template>
+	<view class="page-container">
+		<view class="form-card">
+			<view class="form-item">
+				<text class="label">联系人</text>
+				<input class="input-field" placeholder="请输入收货人姓名" v-model="form.name" />
+			</view>
+			
+			<view class="form-item">
+				<text class="label">手机号</text>
+				<input class="input-field" type="number" placeholder="请输入收货人手机号" v-model="form.phone" />
+			</view>
+
+			<picker mode="multiSelector" 
+				:range="regionRange" 
+				:value="regionValue" 
+				@columnchange="onRegionColumnChange" 
+				@change="onRegionChange">
+				<view class="form-item">
+					<text class="label">所在地区</text>
+					<view class="picker-value-wrap">
+						<text v-if="form.province" class="picker-value">{{form.province}} {{form.city}} {{form.district}}</text>
+						<text v-else class="picker-placeholder">请选择省/市/区</text>
+						<view class="css-arrow-right"></view>
+					</view>
+				</view>
+			</picker>
+
+			<view class="form-item no-border">
+				<text class="label">详细地址</text>
+				<textarea class="textarea-field" placeholder="请输入详细地址（如街道、门牌号等）" v-model="form.detail" />
+			</view>
+		</view>
+
+		<view class="tag-card">
+			<text class="label">标签</text>
+			<view class="tag-list">
+				<view v-for="tag in ['家', '公司', '学校']" :key="tag" 
+					:class="['tag-item', form.label === tag ? 'active' : '']" 
+					@click="form.label = tag">
+					<text :class="['tag-text', form.label === tag ? 'active-text' : '']">{{tag}}</text>
+				</view>
+			</view>
+		</view>
+
+		<view class="default-card">
+			<text class="label">设为默认地址</text>
+			<switch color="#00cc99" :checked="form.isDefault" @change="onDefaultChange" />
+		</view>
+
+		<view v-if="isEdit" class="delete-btn-wrap" @click="handleDelete">
+			<text class="delete-text">删除地址</text>
+		</view>
+
+		<view class="footer-btn-wrap">
+			<button class="save-btn" @click="handleSave">
+				<text class="save-btn-text">保存并使用</text>
+			</button>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, reactive, onMounted } from 'vue'
+	import { useAddressStore, AddressItem } from '@/store/address.uts'
+	import regionData from '@/static/data_level3.json'
+
+	interface Region {
+		id: string;
+		pid: string;
+		deep: string;
+		name: string;
+	}
+
+	const addressStore = useAddressStore()
+	const isEdit = ref(false)
+	const form = reactive({
+		id: '',
+		name: '',
+		phone: '',
+		province: '',
+		city: '',
+		district: '',
+		detail: '',
+		isDefault: false,
+		label: ''
+	})
+
+	// 地区数据存储
+	const allRegions = regionData as Region[]
+	const provinceList = ref<Region[]>([])
+	const cityList = ref<Region[]>([])
+	const districtList = ref<Region[]>([])
+
+	const regionRange = ref<string[][]>([[], [], []])
+	const regionValue = ref<number[]>([0, 0, 0])
+
+	onMounted(() => {
+		loadRegionData()
+		
+		const pages = getCurrentPages()
+		const page = pages[pages.length - 1]
+		const id = page.options['id']
+		if (id) {
+			isEdit.value = true
+			const target = addressStore.addresses.find(a => a.id === id)
+			if (target) {
+				Object.assign(form, target)
+				initPickerFromForm()
+			}
+		}
+	})
+
+	function loadRegionData() {
+		// 提取省份
+		provinceList.value = allRegions.filter(r => r.deep === '0')
+		if (provinceList.value.length > 0) {
+			regionRange.value[0] = provinceList.value.map(p => p.name)
+			// 默认显示第一个省份的第一个城市和第一个区县
+			updateCityAndDistrict(0, 0)
+		}
+	}
+
+	function updateCityAndDistrict(pIdx: number, cIdx: number) {
+		const province = provinceList.value[pIdx]
+		cityList.value = allRegions.filter(r => r.pid === province.id)
+		regionRange.value[1] = cityList.value.map(c => c.name)
+		
+		if (cityList.value.length > 0) {
+			const city = cityList.value[cIdx]
+			districtList.value = allRegions.filter(r => r.pid === city.id)
+			regionRange.value[2] = districtList.value.map(d => d.name)
+		} else {
+			districtList.value = []
+			regionRange.value[2] = []
+		}
+	}
+
+	function initPickerFromForm() {
+		const pIdx = provinceList.value.findIndex(p => p.name === form.province)
+		if (pIdx > -1) {
+			// 更新城市列表
+			const province = provinceList.value[pIdx]
+			cityList.value = allRegions.filter(r => r.pid === province.id)
+			regionRange.value[1] = cityList.value.map(c => c.name)
+			
+			const cIdx = cityList.value.findIndex(c => c.name === form.city)
+			if (cIdx > -1) {
+				// 更新区县列表
+				const city = cityList.value[cIdx]
+				districtList.value = allRegions.filter(r => r.pid === city.id)
+				regionRange.value[2] = districtList.value.map(d => d.name)
+				
+				const dIdx = districtList.value.findIndex(d => d.name === form.district)
+				regionValue.value = [pIdx, cIdx, dIdx > -1 ? dIdx : 0]
+			} else {
+				regionValue.value = [pIdx, 0, 0]
+			}
+		}
+	}
+
+	function onRegionColumnChange(e: any) {
+		const column = e.detail.column
+		const value = e.detail.value
+		regionValue.value[column] = value
+		
+		if (column === 0) {
+			regionValue.value[1] = 0
+			regionValue.value[2] = 0
+			updateCityAndDistrict(value, 0)
+		} else if (column === 1) {
+			regionValue.value[2] = 0
+			updateCityAndDistrict(regionValue.value[0], value)
+		}
+	}
+
+	function onRegionChange(e: any) {
+		const val = e.detail.value
+		form.province = provinceList.value[val[0]].name
+		form.city = cityList.value[val[1]]?.name || ''
+		form.district = districtList.value[val[2]]?.name || ''
+	}
+
+	function onDefaultChange(e: any) {
+		form.isDefault = e.detail.value
+	}
+
+	async function handleSave() {
+		if (!form.name || !form.phone || !form.province || !form.detail) {
+			uni.showToast({ title: '请填写完整信息', icon: 'none' })
+			return
+		}
+		
+		const addressData: AddressItem = {
+			...form,
+			id: isEdit.value ? form.id : ''
+		}
+
+		uni.showLoading({ title: '保存中...' })
+		if (isEdit.value) {
+			await addressStore.updateAddress(addressData)
+		} else {
+			await addressStore.addAddress(addressData)
+		}
+		uni.hideLoading()
+		
+		uni.showToast({ title: '保存成功', icon: 'success' })
+		setTimeout(() => {
+			uni.navigateBack()
+		}, 1500)
+	}
+
+	function handleDelete() {
+		uni.showModal({
+			title: '提示',
+			content: '确定要删除该地址吗？',
+			success: async (res) => {
+				if (res.confirm) {
+					uni.showLoading({ title: '删除中...' })
+					await addressStore.deleteAddress(form.id)
+					uni.hideLoading()
+					uni.showToast({ title: '已删除', icon: 'none' })
+					setTimeout(() => {
+						uni.navigateBack()
+					}, 1500)
+				}
+			}
+		})
+	}
+</script>
+
+<style>
+	.page-container {
+		background-color: #f7f8fa;
+		height: 100vh;
+		padding: 20rpx;
+	}
+
+	.form-card, .tag-card, .default-card {
+		background-color: #fff;
+		border-radius: 20rpx;
+		padding: 0 30rpx;
+		margin-bottom: 20rpx;
+	}
+
+	.form-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 30rpx 0;
+		border-bottom: 1rpx solid #f2f2f2;
+	}
+
+	.no-border {
+		border-bottom: none;
+		align-items: flex-start;
+	}
+
+	.label {
+		width: 160rpx;
+		font-size: 28rpx;
+		color: #333;
+	}
+
+	.input-field {
+		flex: 1;
+		font-size: 28rpx;
+		color: #333;
+	}
+
+	.textarea-field {
+		flex: 1;
+		height: 120rpx;
+		font-size: 28rpx;
+		color: #333;
+		padding-top: 4rpx;
+	}
+
+	.picker-value-wrap {
+		flex: 1;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.picker-value {
+		font-size: 28rpx;
+		color: #333;
+	}
+
+	.picker-placeholder {
+		font-size: 28rpx;
+		color: #ccc;
+	}
+
+	.css-arrow-right {
+		width: 12rpx;
+		height: 12rpx;
+		border-top: 3rpx solid #ccc;
+		border-right: 3rpx solid #ccc;
+		transform: rotate(45deg);
+	}
+
+	.tag-card {
+		padding: 30rpx;
+	}
+
+	.tag-list {
+		display: flex;
+		flex-direction: row;
+		margin-top: 20rpx;
+	}
+
+	.tag-item {
+		padding: 10rpx 30rpx;
+		background-color: #f7f8fa;
+		border-radius: 30rpx;
+		margin-right: 20rpx;
+		border: 1rpx solid transparent;
+	}
+
+	.tag-item.active {
+		background-color: #e6f7f3;
+		border-color: #00cc99;
+	}
+
+	.tag-text {
+		font-size: 24rpx;
+		color: #666;
+	}
+
+	.tag-text.active-text {
+		color: #00cc99;
+	}
+
+	.default-card {
+		padding: 20rpx 30rpx;
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.delete-btn-wrap {
+		margin-top: 40rpx;
+		display: flex;
+		justify-content: center;
+		padding: 20rpx;
+	}
+
+	.delete-text {
+		color: #ff4d4f;
+		font-size: 28rpx;
+	}
+
+	.footer-btn-wrap {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		background-color: #fff;
+		padding: 30rpx 40rpx;
+		padding-bottom: calc(30rpx + constant(safe-area-inset-bottom));
+		padding-bottom: calc(30rpx + env(safe-area-inset-bottom));
+	}
+
+	.save-btn {
+		background-color: #00cc99;
+		border-radius: 50rpx;
+		height: 88rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+	}
+
+	.save-btn-text {
+		color: #fff;
+		font-size: 32rpx;
+		font-weight: bold;
+	}
+</style>

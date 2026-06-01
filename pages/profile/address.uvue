@@ -1,0 +1,206 @@
+<template>
+	<view class="page-container">
+		<scroll-view class="address-scroll" scroll-y>
+			<view v-if="addressStore.addresses.length > 0" class="address-list">
+				<view v-for="(item, index) in addressStore.addresses" :key="item.id" class="address-item" @click="handleSelect(item)">
+					<view class="item-content">
+						<view class="user-info">
+							<text class="user-name">{{item.name}}</text>
+							<text class="user-phone">{{item.phone}}</text>
+							<text v-if="item.isDefault" class="default-badge">默认</text>
+							<text v-if="item.label" class="label-badge">{{item.label}}</text>
+						</view>
+						<view class="address-detail">
+							<text class="detail-text">{{item.province}}{{item.city}}{{item.district}} {{item.detail}}</text>
+						</view>
+					</view>
+					<view class="edit-btn" @click.stop="handleEdit(item)">
+						<text class="edit-icon">✎</text>
+					</view>
+				</view>
+			</view>
+			
+			<view v-else class="empty-state">
+				<text class="empty-icon">📍</text>
+				<text class="empty-text">暂无收货地址</text>
+			</view>
+
+			<view style="height: 160rpx;"></view>
+		</scroll-view>
+
+		<view class="footer-btn-wrap">
+			<button class="add-btn" @click="handleAdd">
+				<text class="add-btn-text">+ 添加新地址</text>
+			</button>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { onMounted } from 'vue'
+	import { useAddressStore, AddressItem } from '@/store/address.uts'
+
+	const addressStore = useAddressStore()
+
+	onMounted(() => {
+		addressStore.fetchAddresses()
+	})
+
+	function handleAdd() {
+		uni.navigateTo({
+			url: '/pages/profile/address-edit'
+		})
+	}
+
+	function handleEdit(item: AddressItem) {
+		uni.navigateTo({
+			url: `/pages/profile/address-edit?id=${item.id}`
+		})
+	}
+
+	function handleSelect(item: AddressItem) {
+		const pages = getCurrentPages()
+		// 检查是否从结算页跳转过来
+		if (pages.length > 1) {
+			const prevPage = pages[pages.length - 2]
+			if (prevPage.route === 'pages/checkout/checkout') {
+				addressStore.setSelectedAddressId(item.id)
+				uni.navigateBack()
+				return
+			}
+		}
+		// 如果不是从结算页来，默认行为可以是编辑或者不执行任何操作
+		// 这里我们选择不执行，因为已经有编辑按钮了
+	}
+</script>
+
+<style>
+	.page-container {
+		background-color: #f7f8fa;
+		height: 100vh;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.address-scroll {
+		flex: 1;
+	}
+
+	.address-list {
+		padding: 20rpx;
+	}
+
+	.address-item {
+		background-color: #fff;
+		border-radius: 20rpx;
+		padding: 30rpx;
+		margin-bottom: 20rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.02);
+	}
+
+	.item-content {
+		flex: 1;
+	}
+
+	.user-info {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 12rpx;
+	}
+
+	.user-name {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333;
+		margin-right: 20rpx;
+	}
+
+	.user-phone {
+		font-size: 28rpx;
+		color: #666;
+		margin-right: 20rpx;
+	}
+
+	.default-badge {
+		background-color: #00cc99;
+		color: #fff;
+		font-size: 20rpx;
+		padding: 2rpx 10rpx;
+		border-radius: 4rpx;
+		margin-right: 10rpx;
+	}
+
+	.label-badge {
+		background-color: #e6f7f3;
+		color: #00cc99;
+		font-size: 20rpx;
+		padding: 2rpx 10rpx;
+		border-radius: 4rpx;
+	}
+
+	.address-detail {
+		display: flex;
+	}
+
+	.detail-text {
+		font-size: 26rpx;
+		color: #999;
+		line-height: 1.4;
+	}
+
+	.edit-btn {
+		padding: 20rpx;
+		margin-left: 20rpx;
+	}
+
+	.edit-icon {
+		font-size: 36rpx;
+		color: #ccc;
+	}
+
+	.empty-state {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding-top: 200rpx;
+	}
+
+	.empty-icon {
+		font-size: 120rpx;
+		margin-bottom: 30rpx;
+		opacity: 0.5;
+	}
+
+	.empty-text {
+		font-size: 28rpx;
+		color: #999;
+	}
+
+	.footer-btn-wrap {
+		background-color: #fff;
+		padding: 30rpx 40rpx;
+		padding-bottom: calc(30rpx + constant(safe-area-inset-bottom));
+		padding-bottom: calc(30rpx + env(safe-area-inset-bottom));
+	}
+
+	.add-btn {
+		background-color: #00cc99;
+		border-radius: 50rpx;
+		height: 88rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+	}
+
+	.add-btn-text {
+		color: #fff;
+		font-size: 32rpx;
+		font-weight: bold;
+	}
+</style>

@@ -1,0 +1,234 @@
+<template>
+	<view class="container">
+		<!-- 轮播图 -->
+		<swiper class="banner" indicator-dots autoplay interval="3000" duration="500">
+			<swiper-item v-for="(item, index) in banners" :key="index">
+				<image :src="item" class="banner-image" mode="aspectFill"></image>
+			</swiper-item>
+		</swiper>
+
+		<!-- 门店信息 -->
+		<view class="store-info card" @click="goToStoreList">
+			<view class="store-name-row">
+				<text class="store-name">{{appStore.currentStore?.name}}</text>
+				<view class="distance-tag">
+					<text class="distance-text">距离您 {{formatDistance(appStore.currentStore?.distance)}}</text>
+				</view>
+			</view>
+			<view class="store-address-row">
+				<text class="store-address">{{appStore.currentStore?.address}}</text>
+			</view>
+		</view>
+
+		<!-- 点单大入口 -->
+		<view class="entry-row">
+			<view class="entry-card left-card" @click="goToMenu('self-pickup')">
+				<image src="/static/pickup.png" class="entry-icon"></image>
+				<text class="entry-title">门店自取</text>
+				<text class="entry-desc">下单免排队</text>
+			</view>
+			<view class="entry-card right-card" @click="goToMenu('delivery')">
+				<image src="/static/delivery.png" class="entry-icon"></image>
+				<text class="entry-title">外卖配送</text>
+				<text class="entry-desc">送到您手中</text>
+			</view>
+		</view>
+
+		<!-- 快捷入口 -->
+		<view class="quick-nav card">
+			<view class="nav-item">
+				<text class="nav-icon">📅</text>
+				<text class="nav-text">签到有礼</text>
+			</view>
+			<view class="nav-item">
+				<text class="nav-icon">🎟️</text>
+				<text class="nav-text">我的卡券</text>
+			</view>
+			<view class="nav-item">
+				<text class="nav-icon">🏆</text>
+				<text class="nav-text">积分商城</text>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, onMounted } from 'vue'
+	import { request } from '@/utils/request.uts'
+	import { StoreInfo } from '@/store/app.uts'
+	import { useAppStore } from '@/store/app.uts'
+	import { formatDistance } from '@/utils/format.uts'
+
+	const appStore = useAppStore()
+
+	const banners = ref([
+		'/static/banner/banner1.jpg',
+		'/static/banner/banner2.jpg',
+		'/static/banner/banner3.jpg'
+	])
+
+	
+	
+	onMounted(() => {
+		if (!appStore.currentStore) {
+			getNearestStore()
+		}
+	})
+
+	function getNearestStore() {
+		uni.getLocation({
+			type: 'gcj02',
+			success: (res) => {
+				request<any>({
+					url: '/store/nearby',
+					data: {
+						longitude: res.longitude,
+						latitude: res.latitude,
+						pageSize: 1
+					}
+				}).then(data => {
+					const list = data.result.list as StoreInfo[]
+					if (list.length > 0) {
+						appStore.setStore(list[0])
+					}
+				})
+			},
+			fail: () => {
+				request<any>({
+					url: '/store/all',
+					data: { pageSize: 1 }
+				}).then(data => {
+					const list = data.result.list as StoreInfo[]
+					if (list.length > 0) {
+						appStore.setStore(list[0])
+					}
+				})
+			}
+		})
+	}
+
+	function goToStoreList() {
+		uni.navigateTo({
+			url: '/pages/store/list'
+		})
+	}
+
+	function goToMenu(mode: string) {
+		appStore.setOrderMode(mode as 'self-pickup' | 'delivery')
+		uni.switchTab({
+			url: '/pages/menu/menu'
+		})
+	}
+</script>
+
+<style>
+	.container {
+		background-color: #f5f5f5;
+		min-height: 100vh;
+		padding-bottom: 20px;
+	}
+
+	.banner {
+		width: 100%;
+		height: 450rpx;
+	}
+
+	.banner-image {
+		width: 100%;
+		height: 100%;
+	}
+
+	.card {
+		background-color: #ffffff;
+		margin: 20rpx;
+		padding: 30rpx;
+		border-radius: 16rpx;
+	}
+
+	.store-info {
+		margin-top: -40rpx;
+		position: relative;
+		z-index: 1;
+	}
+
+	.store-name-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 10rpx;
+	}
+
+	.store-name {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.distance-tag {
+		background-color: #e6f9f5;
+		padding: 4rpx 12rpx;
+		border-radius: 20rpx;
+	}
+
+	.distance-text {
+		font-size: 22rpx;
+		color: #00cc99;
+	}
+
+	.store-address {
+		font-size: 24rpx;
+		color: #999999;
+	}
+
+	.entry-row {
+		flex-direction: row;
+		padding: 0 10rpx;
+	}
+
+	.entry-card {
+		flex: 1;
+		background-color: #ffffff;
+		margin: 10rpx;
+		padding: 40rpx 20rpx;
+		border-radius: 16rpx;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.entry-icon {
+		width: 80rpx;
+		height: 80rpx;
+		margin-bottom: 20rpx;
+	}
+
+	.entry-title {
+		font-size: 36rpx;
+		font-weight: bold;
+		color: #333333;
+		margin-bottom: 10rpx;
+	}
+
+	.entry-desc {
+		font-size: 24rpx;
+		color: #999999;
+	}
+
+	.quick-nav {
+		flex-direction: row;
+		justify-content: space-around;
+	}
+
+	.nav-item {
+		align-items: center;
+	}
+
+	.nav-icon {
+		font-size: 50rpx;
+		margin-bottom: 10rpx;
+	}
+
+	.nav-text {
+		font-size: 24rpx;
+		color: #666666;
+	}
+</style>

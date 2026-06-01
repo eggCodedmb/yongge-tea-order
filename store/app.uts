@@ -1,0 +1,28 @@
+import { defineStore } from 'pinia'
+
+export interface StoreInfo {
+	id: number;
+	name: string;
+	address: string;
+	distance: any;
+	business_hours?: string;
+}
+
+export const useAppStore = defineStore('app', {
+	state: () => ({
+		currentStore: null as StoreInfo | null,
+		orderMode: 'self-pickup' as 'self-pickup' | 'delivery',
+		orderTabIndex: 0
+	}),
+	actions: {
+		setStore(store: StoreInfo) {
+			this.currentStore = store
+		},
+		setOrderMode(mode: 'self-pickup' | 'delivery') {
+			this.orderMode = mode
+		},
+		setOrderTabIndex(index: number) {
+			this.orderTabIndex = index
+		}
+	}
+})

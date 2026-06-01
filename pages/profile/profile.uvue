@@ -1,0 +1,477 @@
+<template>
+	<view class="page-container">
+		<scroll-view class="profile-scroll" scroll-y>
+			<!-- 顶部品牌背景区 -->
+			<view class="brand-header">
+				<view class="user-info-row" @click="handleLogin">
+					<view class="avatar-wrapper">
+						<image :src="userStore.userInfo?.avatar || '/static/logo.png'" class="avatar" mode="aspectFill"></image>
+						<view class="edit-badge" v-if="userStore.token != ''">
+							<text class="edit-icon">✎</text>
+						</view>
+					</view>
+					<view class="user-text-meta">
+						<text class="user-name">{{userStore.userInfo?.nickname || '登录/注册'}}</text>
+						<text class="user-sub">{{userStore.token != '' ? '愿每一杯茶都能温暖你' : '解锁会员特权，尽享美味'}}</text>
+					</view>
+				</view>
+			</view>
+
+			<view class="content-overlap">
+				<!-- 会员/资产胶囊卡片 -->
+				<view class="member-card-premium">
+					<view class="card-top-row">
+						<view class="level-info">
+							<text class="level-label">V{{userStore.token != '' ? '2' : '0'}} 益友会员</text>
+							<view class="progress-track">
+								<view class="progress-fill" :style="{width: userStore.token != '' ? '65%' : '0%'}"></view>
+							</view>
+							<text class="progress-text">{{userStore.token != '' ? '再积 35 分升级' : '登录查看进度'}}</text>
+						</view>
+						<view class="asset-grid">
+							<view class="asset-col">
+								<text class="asset-num">{{userStore.userInfo?.points || 0}}</text>
+								<text class="asset-name">积分</text>
+							</view>
+							<view class="asset-col">
+								<text class="asset-num">0</text>
+								<text class="asset-name">礼券</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<!-- 订单快捷状态 -->
+				<view class="module-card">
+					<view class="module-title-row" @click="goToOrders">
+						<text class="module-main-title">我的订单</text>
+						<view style="flex-direction: row; align-items: center;">
+							<text class="module-link">全部订单</text>
+							<view class="css-arrow-right"></view>
+						</view>
+					</view>
+					<view class="status-flex">
+						<view class="status-box" @click="goToOrders(2)">
+							<text class="s-emoji">💳</text>
+							<text class="s-label">待付款</text>
+						</view>
+						<view class="status-box" @click="goToOrders(0)">
+							<text class="s-emoji">🍵</text>
+							<text class="s-label">制作中</text>
+						</view>
+						<view class="status-box" @click="goToOrders(0)">
+							<text class="s-emoji">🛵</text>
+							<text class="s-label">配送中</text>
+						</view>
+						<view class="status-box" @click="goToOrders(1)">
+							<text class="s-emoji">💬</text>
+							<text class="s-label">待评价</text>
+						</view>
+					</view>
+				</view>
+
+				<!-- 更多服务列表 -->
+				<view class="module-card no-padding">
+					<view class="list-item" hover-class="item-hover" @click="goToAddress">
+						<text class="list-icon">📍</text>
+						<text class="list-text">收货地址</text>
+						<view class="css-arrow-right-large"></view>
+					</view>
+					<view class="list-item" hover-class="item-hover">
+						<text class="list-icon">🎁</text>
+						<text class="list-text">邀请有礼</text>
+						<view class="css-arrow-right-large"></view>
+					</view>
+					<view class="list-item" hover-class="item-hover">
+						<text class="list-icon">🛠️</text>
+						<text class="list-text">常见问题</text>
+						<view class="css-arrow-right-large"></view>
+					</view>
+					<view class="list-item" hover-class="item-hover" @click="contactService">
+						<text class="list-icon">📞</text>
+						<text class="list-text">在线客服</text>
+						<view class="css-arrow-right-large"></view>
+					</view>
+				</view>
+
+				<!-- 退出登录 -->
+				<view class="logout-btn-wrap" v-if="userStore.token != ''" @click="handleLogout">
+					<text class="logout-text">退出当前账号</text>
+				</view>
+				
+				<view class="footer-copy">
+					<text class="copy-text">© 勇哥茶饮 点物小程序 v1.0.3</text>
+				</view>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { useUserStore } from '@/store/user.uts'
+	import { useAppStore } from '@/store/app.uts'
+	import { useCartStore } from '@/store/cart.uts'
+	import { request } from '@/utils/request.uts'
+
+	const userStore = useUserStore()
+	const cartStore = useCartStore()
+
+	function handleLogin() {
+		if (userStore.token != '') return
+		
+		uni.login({
+			provider: 'weixin',
+			success: (res) => {
+				const code = res.code
+				if (code) {
+					performLogin(code)
+				}
+			},
+			fail: (_) => {
+				uni.showToast({ title: '获取凭证失败', icon: 'none' })
+			}
+		})
+	}
+
+	async function performLogin(code: string) {
+		uni.showLoading({ title: '安全登录中' })
+		try {
+			const res = await request<any>({
+				url: '/user/wxlogin',
+				method: 'POST',
+				data: {
+					code: code,
+					userInfo: { 
+						nick_name: '益友会员', 
+						avatar: '' 
+					}
+				}
+			})
+			
+			uni.hideLoading()
+			
+			const result = res.result as UTSJSONObject
+			const user = result['user'] as UTSJSONObject
+			
+			userStore.setUserInfo({
+				nickname: user['nick_name'] as string || '益友会员',
+				avatar: user['avatar'] as string || '',
+				phone: user['phone'] as string || '',
+				points: (user['points'] as number || 0)
+			})
+			userStore.setToken(result['accessToken'] as string)
+			
+			uni.showToast({ title: '登录成功', icon: 'success' })
+		} catch (e) {
+			uni.hideLoading()
+			console.error('Login failed', e)
+		}
+	}
+
+	function handleLogout() {
+		uni.showModal({
+			title: '提示',
+			content: '确定要退出登录吗？',
+			success: (res) => {
+				if (res.confirm) {
+					userStore.logout()
+					uni.showToast({ title: '已退出', icon: 'none' })
+				}
+			}
+		})
+	}
+
+	function goToOrders(index: number = 0) {
+		const appStore = useAppStore()
+		appStore.setOrderTabIndex(index)
+		uni.switchTab({
+			url: '/pages/order/order'
+		})
+	}
+
+	function goToAddress() {
+		uni.navigateTo({
+			url: '/pages/profile/address'
+		})
+	}
+	
+	function contactService() {
+		uni.showToast({ title: '客服正在赶来...', icon: 'none' })
+	}
+</script>
+
+<style>
+	.page-container {
+		background-color: #f7f8fa;
+		height: 100vh;
+	}
+
+	.profile-scroll {
+		height: 100%;
+	}
+
+	/* 头部品牌背景 */
+	.brand-header {
+		background-color: #00cc99;
+		height: 420rpx;
+		padding: 120rpx 40rpx 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.user-info-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.avatar-wrapper {
+		position: relative;
+		margin-right: 32rpx;
+	}
+
+	.avatar {
+		width: 128rpx;
+		height: 128rpx;
+		border-radius: 64rpx;
+		border: 4rpx solid rgba(255, 255, 255, 0.8);
+		background-color: #fff;
+	}
+
+	.edit-badge {
+		position: absolute;
+		bottom: 0;
+		right: 0;
+		background-color: #333;
+		width: 40rpx;
+		height: 40rpx;
+		border-radius: 20rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 2rpx solid #fff;
+	}
+
+	.edit-icon {
+		color: #fff;
+		font-size: 20rpx;
+	}
+
+	.user-text-meta {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.user-name {
+		font-size: 40rpx;
+		font-weight: bold;
+		color: #fff;
+		margin-bottom: 8rpx;
+	}
+
+	.user-sub {
+		font-size: 24rpx;
+		color: rgba(255, 255, 255, 0.8);
+	}
+
+	/* 内容重叠区 */
+	.content-overlap {
+		padding: 0 30rpx;
+		margin-top: -100rpx;
+	}
+
+	/* 尊享会员卡 */
+	.member-card-premium {
+		background: linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%);
+		border-radius: 24rpx;
+		padding: 40rpx 32rpx;
+		margin-bottom: 30rpx;
+		box-shadow: 0 12rpx 30rpx rgba(0,0,0,0.15);
+	}
+
+	.card-top-row {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.level-info {
+		flex: 1;
+	}
+
+	.level-label {
+		color: #e6ceac;
+		font-size: 32rpx;
+		font-weight: bold;
+		font-style: italic;
+		margin-bottom: 16rpx;
+		display: block;
+	}
+
+	.progress-track {
+		width: 240rpx;
+		height: 6rpx;
+		background-color: rgba(255,255,255,0.1);
+		border-radius: 3rpx;
+		margin-bottom: 12rpx;
+	}
+
+	.progress-fill {
+		height: 100%;
+		background-color: #e6ceac;
+		border-radius: 3rpx;
+	}
+
+	.progress-text {
+		color: rgba(230, 206, 172, 0.6);
+		font-size: 20rpx;
+	}
+
+	.asset-grid {
+		display: flex;
+		flex-direction: row;
+	}
+
+	.asset-col {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		margin-left: 48rpx;
+	}
+
+	.asset-num {
+		color: #fff;
+		font-size: 36rpx;
+		font-weight: bold;
+		margin-bottom: 4rpx;
+	}
+
+	.asset-name {
+		color: rgba(255,255,255,0.5);
+		font-size: 22rpx;
+	}
+
+	/* 模块通用卡片 */
+	.module-card {
+		background-color: #fff;
+		border-radius: 24rpx;
+		padding: 32rpx;
+		margin-bottom: 24rpx;
+		box-shadow: 0 4rpx 16rpx rgba(0,0,0,0.02);
+	}
+
+	.no-padding {
+		padding: 8rpx 0;
+	}
+
+	.module-title-row {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 32rpx;
+	}
+
+	.module-main-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333;
+	}
+
+	.module-link {
+		font-size: 24rpx;
+		color: #999;
+	}
+
+	/* 订单状态 */
+	.status-flex {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-around;
+	}
+
+	.status-box {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+	}
+
+	.s-emoji {
+		font-size: 48rpx;
+		margin-bottom: 12rpx;
+	}
+
+	.s-label {
+		font-size: 24rpx;
+		color: #666;
+	}
+
+	/* 列表项 */
+	.list-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		padding: 32rpx 40rpx;
+		border-bottom: 1rpx solid #f9f9f9;
+	}
+
+	.item-hover {
+		background-color: #fafafa;
+	}
+
+	.list-icon {
+		font-size: 36rpx;
+		margin-right: 24rpx;
+	}
+
+	.list-text {
+		flex: 1;
+		font-size: 28rpx;
+		color: #333;
+	}
+
+	.css-arrow-right {
+		width: 12rpx;
+		height: 12rpx;
+		border-top: 3rpx solid #999;
+		border-right: 3rpx solid #999;
+		transform: rotate(45deg);
+		margin-left: 10rpx;
+	}
+
+	.css-arrow-right-large {
+		width: 14rpx;
+		height: 14rpx;
+		border-top: 3rpx solid #ccc;
+		border-right: 3rpx solid #ccc;
+		transform: rotate(45deg);
+	}
+
+	/* 退出登录 */
+	.logout-btn-wrap {
+		height: 100rpx;
+		background-color: #fff;
+		border-radius: 24rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-top: 40rpx;
+	}
+
+	.logout-text {
+		color: #ff4d4f;
+		font-size: 30rpx;
+		font-weight: 500;
+	}
+
+	.footer-copy {
+		padding: 60rpx 0;
+		text-align: center;
+	}
+
+	.copy-text {
+		font-size: 22rpx;
+		color: #ccc;
+	}
+</style>

@@ -1,0 +1,192 @@
+import { defineStore } from 'pinia'
+import { request } from '@/utils/request.uts'
+
+export interface CartItem {
+	id: number; // 商品ID (goods_id)
+	cartId: number; // 购物车记录ID (主键)
+	name: string;
+	price: number; // 单价 (含规格)
+	quantity: number;
+	specs: string[];
+	toppings: string[];
+	totalPrice: number;
+	image: string;
+	selected: boolean;
+}
+
+export const useCartStore = defineStore('cart', {
+	state: () => ({
+		items: (JSON.parse(uni.getStorageSync('cart_items') as string || '[]') as CartItem[]),
+		loading: false
+	}),
+	getters: {
+		totalCount(): number {
+			return this.items.reduce((total, item) => total + item.quantity, 0)
+		},
+		selectedCount(): number {
+			return this.items.filter(i => i.selected).reduce((total, item) => total + item.quantity, 0)
+		},
+		totalAmount(): number {
+			// 如果 items 为空或没有被选中的，直接返回 0
+			if (this.items.length === 0) return 0
+			const total = this.items.filter(i => i.selected).reduce((total, item) => total + item.totalPrice, 0)
+			return Math.round(total * 100) / 100
+		}
+	},
+	actions: {
+		saveToStorage() {
+			uni.setStorageSync('cart_items', JSON.stringify(this.items))
+		},
+
+		async addToCart(item: CartItem) {
+			// 确保新加入的默认是选中状态
+			item.selected = true
+			
+			const index = this.items.findIndex(i => i.id === item.id)
+			if (index > -1) {
+				this.items[index].quantity += 1
+				this.items[index].totalPrice = Math.round((this.items[index].price * this.items[index].quantity) * 100) / 100
+				// 重新加入时强制设为选中
+				this.items[index].selected = true
+			} else {
+				this.items.push(item)
+			}
+			this.saveToStorage()
+
+			try {
+				const res = await request<any>({
+					url: '/cart/add',
+					method: 'POST',
+					data: { goods_id: item.id }
+				})
+				if (res.result != null && res.result['id'] != null) {
+					const cartId = res.result['id'] as number
+					const idx = this.items.findIndex(i => i.id === item.id)
+					if (idx > -1) {
+						this.items[idx].cartId = cartId
+						this.saveToStorage()
+					}
+				}
+			} catch (e) {
+				console.error('Sync add to cart failed', e)
+			}
+		},
+		
+		async increaseQuantity(index: number) {
+			const item = this.items[index]
+			if (item == null) return
+			item.quantity += 1
+			item.totalPrice = Math.round((item.price * item.quantity) * 100) / 100
+			this.saveToStorage()
+
+			try {
+				if (item.cartId > 0) {
+					await request<any>({
+						url: `/cart/number/${item.cartId}`,
+						method: 'PATCH',
+						data: { number: item.quantity }
+					})
+				}
+			} catch (e) {
+				console.error('Sync increase quantity failed', e)
+			}
+		},
+		
+		async decreaseQuantity(index: number) {
+			const item = this.items[index]
+			if (item == null) return
+			if (item.quantity > 1) {
+				item.quantity -= 1
+				item.totalPrice = Math.round((item.price * item.quantity) * 100) / 100
+				this.saveToStorage()
+				try {
+					if (item.cartId > 0) {
+						await request<any>({
+							url: `/cart/number/${item.cartId}`,
+							method: 'PATCH',
+							data: { number: item.quantity }
+						})
+					}
+				} catch (e) {
+					console.error('Sync decrease quantity failed', e)
+				}
+			} else {
+				await this.removeFromCart(index)
+			}
+		},
+		
+		async removeFromCart(index: number) {
+			const item = this.items[index]
+			if (item == null) return
+			const cartId = item.cartId
+			this.items.splice(index, 1)
+			this.saveToStorage()
+
+			try {
+				if (cartId > 0) {
+					await request<any>({
+						url: '/cart/remove',
+						method: 'POST',
+						data: { ids: [cartId] }
+					})
+				}
+			} catch (e) {
+				console.error('Sync remove from cart failed', e)
+			}
+		},
+
+		async clearCart() {
+			const ids = this.items.map(item => item.cartId).filter(id => id > 0)
+			this.items = []
+			this.saveToStorage()
+
+			if (ids.length > 0) {
+				try {
+					await request<any>({
+						url: '/cart/remove',
+						method: 'POST',
+						data: { ids: ids }
+					})
+				} catch (e) {
+					console.error('Sync clear cart failed', e)
+				}
+			}
+		},
+
+		async toggleCheck(index: number) {
+			const item = this.items[index]
+			if (item == null) return
+			item.selected = !item.selected
+			this.saveToStorage()
+
+			try {
+				if (item.cartId > 0) {
+					await request<any>({
+						url: '/cart/check',
+						method: 'PATCH',
+						data: { ids: [item.cartId] }
+					})
+				}
+			} catch (e) {
+				console.error('Sync toggle check failed', e)
+			}
+		},
+
+		async toggleAll(isSelect: boolean) {
+			this.items.forEach(item => {
+				item.selected = isSelect
+			})
+			this.saveToStorage()
+
+			try {
+				await request<any>({
+					url: '/cart/selectAll',
+					method: 'POST',
+					data: { isSelect: isSelect }
+				})
+			} catch (e) {
+				console.error('Sync toggle all failed', e)
+			}
+		}
+	}
+})

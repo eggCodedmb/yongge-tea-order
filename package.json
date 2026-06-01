@@ -1,0 +1,16 @@
+{
+  "name": "dian-wu",
+  "version": "1.0.0",
+  "description": "Yi He Tang Ordering Mini-Program",
+  "main": "main.uts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@dcloudio/uni-ui": "^1.5.12",
+    "pinia": "^3.0.4"
+  }
+}

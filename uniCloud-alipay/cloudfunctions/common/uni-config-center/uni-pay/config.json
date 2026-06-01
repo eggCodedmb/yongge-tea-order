@@ -1,0 +1,27 @@
+{
+  "notifyUrl": "https://env-00jy6bwlabzf.dev-hz.cloudbasefunction.cn/uni-pay-co",
+  "wxpay": {
+    "enable": false,
+    "mchId": "your_mch_id",
+    "key": "your_mch_key",
+    "appId": "wx764f09d8c31f970a",
+    "subAppId": "",
+    "subMchId": "",
+    "pfx": ""
+  },
+  "wxpay_mp": {
+    "enable": false,
+    "mchId": "your_mch_id",
+    "key": "your_mch_key",
+    "appId": "wx764f09d8c31f970a",
+    "appsecret": "your_app_secret"
+  },
+  "alipay": {
+    "enable": true,
+    "appId": "2021006157653139",
+    "privateKey": "MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQCkCz4SAfSPtqnN/XsuLsqYNleNrWoEEc/WdyksakbZO7U84agdtio27AkInwjXSRMqmod//l/yCzOUtdzPSKm8xQOUZKQyQU7XMbQVBUB/DQ9FuO50Bio3VXyZbuNvDrFUQHz3NCaaWo8QWiAdodgeVPwbqHTyKtNgRr+9tEswS4Ougjqbzg0wmH6v+gZnQeHfTYjHoSBwbBkV2rv2XpRmvGmksRUXR5gmVCo7GTcJSAHUK30CsQyXBD+xzeCcub517yWrItV07gK+jviy5qXx1RevCr2lPbJGXKUbfb523nPgtgaw8jGV1HzT6m/cFjSB+J1Ed6s8IEBvqmrw4MUVAgMBAAECggEAdQGT11JPtwYJ3eR0LP+w/5qbHnHXkWmG/ijmVEjFmgKthexKdk7Nk3kOBHky3CPCKPwps9CjbMgylVqWUb85WmyH3htexn2wl2tbUDb7xuNwxkFey6DuEaPHCMWAMWGgeEC7IbOv6R64tmgiSiB7Pz9MxwmDyItlU2GDN/NWQe4krHCqpROTUQNF+7on+7x4uadmjn0NBIR19sOkQfwjg+9LfBnRUEx7xdB1BOe6D1xF1++luDK469NPfyCav0NV6cFKsNg3jNmOKh1kVc9uZPCPp4AlDKBFwc3jmtxagdR7LnD3Ed9xf/GjM2NVlBy1MgFmbjNetVS1n75T9smkQQKBgQDlBB7JqLiy+jg+DWU5emDn26wOE4qRMNSQbZ7wYgoAeyVRh2CC0vXvzL0gbA0O+XoYk0SQnXbaNTpq5sT1u4DZskNRnmpXwxpksA2bLtU5WviInqmQ+9mUSHm5w+jdKClF9PUQ2VFIftgUx5Jb0/HkvKcNGHMeEcw4bvUsepEykQKBgQC3X1jnZxMueUNTVPkC73NGHYBNJ+WUi+vK/jeVay15A4NAHksagAwKKLSOxAqDg4FG7aPJ44INuBpDXJbaawcKNPJK0uDOloUmVKxG3/W71+8PjcVogUB8HF7jmuvNK1W+1eg3/RXMobSbw0uXiuRo7Q73XkQVxfljvMykK+XkRQKBgQCR28nwDfF0rEDd5JIvxW2qvhIa9P8v8bWwNuEfoJFWNRhTkLE7ITlZ/UAHQkoe222T8Ved82wbFgOayldvWnh6LjsJ5Kc+Nhi9QBOqXm2XFgVsngDJQl4VPwOn+Mp68HU5BQaAMKjAT2k38tOYgKhzUmPix0uqPxOebazhIz8OwQKBgQCkrRzjGx8Pwlji8lF6AF4uXnoFUEoNwCZuMyTpq8m3fp8VKt9Zmhq12N5lw8qJVsT3VJydxxHZjjcPvYu/9RPqZ6gb6At5m5VR2gKo16IQIpiPCEt7UW/+xV+12T/gDgXADsuv1DoKfkH7DETLgDElxZaGMgLE5vjTSA8jdETNXQKBgQDQKXSgv8hrdAGOFOdY3suUcMYCmlk+nZIMcpTqu+DaZCv7eRh3AJIaevDEsE8j/0hnzzSlIh2/TExV4rIrfsoLgpmWQcGbmpIboE34kyZewCNDVflSPWPLr+igKMu/nOn3nQ2SEjysUcgRKWikqKau9vMXoSw2SM0OeT635EZc3A==",
+    "alipayPublicKey": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsQ1sm8onSD9dx7Qkv2oMVQ0VaVi7O+aJtR4EtY6rxioMOjsPcVsNsIAn2OgdeA1b/ONaX0A27+AMF+4FjsLzfx8xzRFTYQ7AfvyHKowMxYJIy4YWEQ1O3iml9cBk1QpOP36pbzA+OWRarm4Ti4pqKbO3wTLtCBX9X0fPtXFfTSk911O9rqC86XXI2+EPVhqJkvlb4j4PqQB7JvgVzlRGIoAJj2zjm2a2LQ7cOLrHc4GePo1lyixFldsQsIAcLMe+LPvUEioGd3qCTuxo/W5+U03QVK+T2y9HausnkrAzylMiomhvzRfpyQrYadcU0mck6z+NEfHfPH4skhJf4wCn7wIDAQAB",
+    "keyType": "RSA2",
+    "sandbox": true
+  }
+}

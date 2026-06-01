@@ -1,0 +1,44 @@
+{
+  "passwordSecret": "passwordSecret-demo",
+  "tokenSecret": "tokenSecret-demo",
+  "tokenExpiresIn": 7200,
+  "passwordErrorLimit": 6,
+  "bindTokenToDevice": false,
+  "passwordErrorRetryTime": 3600,
+  "app": {
+    "tokenExpiresIn": 2592000,
+    "oauth": {
+      "weixin": {
+        "appid": "wx764f09d8c31f970a",
+        "appsecret": ""
+      }
+    }
+  },
+  "mp-weixin": {
+    "oauth": {
+      "weixin": {
+        "appid": "wx764f09d8c31f970a",
+        "appsecret": ""
+      }
+    }
+  },
+  "mp-alipay": {
+    "oauth": {
+      "alipay": {
+        "appid": "",
+        "privateKey": ""
+      }
+    }
+  },
+  "service": {
+    "sms": {
+      "name": "DCloud",
+      "codeExpiresIn": 300,
+      "smsKey": "",
+      "smsSecret": ""
+    },
+    "univerify": {
+      "appid": "__UNI__C23B05B"
+    }
+  }
+}

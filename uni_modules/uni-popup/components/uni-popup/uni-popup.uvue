@@ -1,0 +1,103 @@
+<template>
+  <view class="popup-root" :class="'popup-'+type" v-if="isOpen" v-show="isShow" @click="clickMask">
+    <view @click.stop class="popup-content" :class="'popup-content-'+type">
+      <slot></slot>
+    </view>
+  </view>
+</template>
+
+<script>
+  type CloseCallBack = ()=> void;
+  let closeCallBack:CloseCallBack = () :void => {};
+  export default {
+    emits:["close","clickMask"],
+    data() {
+      return {
+        isShow:false,
+        isOpen:false
+      }
+    },
+    props: {
+      maskClick: {
+        type: Boolean,
+        default: true
+      },
+      type: {
+        type: String,
+        default: "center"
+      }
+    },
+    watch: {
+      isShow:{
+        handler(isShow: boolean) {
+          if(isShow && this.isOpen == false){
+            this.isOpen = true
+          }
+        },
+        immediate:true
+      },
+      isOpen:{
+        handler(isOpen: boolean) {
+          if(isOpen && this.isShow == false){
+            this.isShow = true
+          }
+        },
+        immediate:true
+      }
+    },
+    methods:{
+      open(){
+        this.isOpen = true;
+      },
+      clickMask(){
+        if(this.maskClick == true){
+          this.$emit('clickMask')
+          this.close()
+        }
+      },
+      close(): void{
+        this.isOpen = false;
+        this.$emit('close')
+        closeCallBack()
+      },
+      hiden(){
+        this.isShow = false
+      },
+      show(){
+        this.isShow = true
+      }
+    }
+  }
+</script>
+
+<style>
+.popup-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 750rpx;
+  height: 100%;
+  flex: 1;
+  background-color: rgba(0, 0, 0, 0.4);
+  justify-content: center;
+  align-items: center;
+  z-index: 99;
+}
+
+.popup-bottom {
+  justify-content: flex-end;
+}
+
+.popup-content {
+  width: 750rpx;
+}
+
+.popup-content-center {
+  align-items: center;
+  justify-content: center;
+}
+
+.popup-content-bottom {
+  width: 750rpx;
+}
+</style>

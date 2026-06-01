@@ -1,0 +1,104 @@
+{
+  "id": "uni-pay-x",
+  "displayName": "uni-pay-x",
+  "version": "1.2.2",
+  "description": "uni-pay 的 uni-app x版本，需HBX≥4.02",
+  "keywords": [
+    "uni-pay-x",
+    "微信支付",
+    "支付宝",
+    "苹果虚拟支付",
+    "华为支付"
+],
+  "repository": "",
+  "engines": {
+    "HBuilderX": "^4.02",
+    "uni-app": "",
+    "uni-app-x": "^4.36"
+  },
+  "dcloudext": {
+    "type": "unicloud-template-page",
+    "sale": {
+      "regular": {
+        "price": "0.00"
+      },
+      "sourcecode": {
+        "price": "0.00"
+      }
+    },
+    "contact": {
+      "qq": ""
+    },
+    "declaration": {
+      "ads": "无",
+      "data": "插件不采集任何数据",
+      "permissions": "无"
+    },
+    "npmurl": "",
+    "darkmode": "x",
+    "i18n": "x",
+    "widescreen": "√"
+  },
+  "uni_modules": {
+    "dependencies": [],
+    "encrypt": [],
+    "platforms": {
+      "cloud": {
+        "tcb": "√",
+        "aliyun": "√",
+        "alipay": "√"
+      },
+      "client": {
+        "uni-app": {
+          "vue": {
+            "vue2": "x",
+            "vue3": "x"
+          },
+          "web": {
+            "safari": "x",
+            "chrome": "x"
+          },
+          "app": {
+            "vue": "x",
+            "nvue": "x",
+            "android": "x",
+            "ios": "x",
+            "harmony": "x"
+          },
+          "mp": {
+            "weixin": "x",
+            "alipay": "x",
+            "toutiao": "x",
+            "baidu": "x",
+            "kuaishou": "x",
+            "jd": "x",
+            "harmony": "x",
+            "qq": "x",
+            "lark": "x"
+          },
+          "quickapp": {
+            "huawei": "x",
+            "union": "x"
+          }
+        },
+        "uni-app-x": {
+          "web": {
+            "safari": "√",
+            "chrome": "√"
+          },
+          "app": {
+            "android": {
+                "extVersion": "",
+                "minVersion": "21"
+            },
+            "ios": "√",
+            "harmony": "√"
+          },
+          "mp": {
+            "weixin": "√"
+          }
+        }
+      }
+    }
+  }
+}

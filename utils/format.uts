@@ -1,0 +1,29 @@
+export function formatDistance(distance : any) : string {
+	if (distance == null) return ''
+	if (typeof distance === 'string' && distance.includes('m')) return distance
+	
+	const d = parseFloat(distance.toString())
+	if (isNaN(d)) return distance.toString()
+	
+	if (d < 1) {
+		return (d * 1000).toFixed(0) + 'm'
+	}
+	return d.toFixed(1) + 'km'
+}
+export function formatBusinessHours(hours : any) : string {
+	if (hours == null || hours === '') return '08:00-22:00'
+	if (typeof hours !== 'string') return hours.toString()
+	
+	try {
+		if (hours.startsWith('[') && hours.endsWith(']')) {
+			const arr = JSON.parse(hours)
+			if (Array.isArray(arr)) {
+				return arr.join(' ')
+			}
+		}
+	} catch (e) {
+		// 如果解析失败，直接返回原字符串
+	}
+	
+	return hours
+}
