@@ -51,19 +51,19 @@
 						</view>
 					</view>
 					<view class="status-flex">
-						<view class="status-box" @click="goToOrders">
+						<view class="status-box" @click="goToOrders(2)">
 							<text class="s-emoji">💳</text>
 							<text class="s-label">待付款</text>
 						</view>
-						<view class="status-box" @click="goToOrders">
+						<view class="status-box" @click="goToOrders(0)">
 							<text class="s-emoji">🍵</text>
 							<text class="s-label">制作中</text>
 						</view>
-						<view class="status-box" @click="goToOrders">
+						<view class="status-box" @click="goToOrders(0)">
 							<text class="s-emoji">🛵</text>
 							<text class="s-label">配送中</text>
 						</view>
-						<view class="status-box" @click="goToOrders">
+						<view class="status-box" @click="goToOrders(1)">
 							<text class="s-emoji">💬</text>
 							<text class="s-label">待评价</text>
 						</view>
@@ -109,9 +109,12 @@
 
 <script setup lang="uts">
 	import { useUserStore } from '@/store/user.uts'
+	import { useAppStore } from '@/store/app.uts'
+	import { useCartStore } from '@/store/cart.uts'
 	import { request } from '@/utils/request.uts'
 
 	const userStore = useUserStore()
+	const cartStore = useCartStore()
 
 	function handleLogin() {
 		if (userStore.token != '') return
@@ -178,7 +181,9 @@
 		})
 	}
 
-	function goToOrders() {
+	function goToOrders(index: number = 0) {
+		const appStore = useAppStore()
+		appStore.setOrderTabIndex(index)
 		uni.switchTab({
 			url: '/pages/order/order'
 		})

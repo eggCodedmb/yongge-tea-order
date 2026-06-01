@@ -91,8 +91,10 @@
 	import { request } from '@/utils/request.uts'
 	import { useUserStore } from '@/store/user.uts'
 	import { useCartStore, CartItem } from '@/store/cart.uts'
+	import { useAppStore } from '@/store/app.uts'
 
 	const userStore = useUserStore()
+	const appStore = useAppStore()
 	const tabs = ['全部', '已完成', '待支付', '已取消']
 	const activeTab = ref(0)
 	const orders = ref<any[]>([])
@@ -101,6 +103,14 @@
 
 	onMounted(() => {
 		fetchOrders()
+	})
+
+	onShow(() => {
+		// 检查是否有从“我的”页面传过来的初始 Tab 索引
+		if (appStore.orderTabIndex !== activeTab.value) {
+			activeTab.value = appStore.orderTabIndex
+			fetchOrders()
+		}
 	})
 
 	async function fetchOrders() {
@@ -187,7 +197,8 @@
 				quantity: item.quantity,
 				specs: specsArray,
 				toppings: [],
-				totalPrice: parseFloat(item.price || '0') * item.quantity
+				totalPrice: parseFloat(item.price || '0') * item.quantity,
+				image: item.product?.goods_img || ''
 			}
 			cartStore.addToCart(cartItem)
 		})

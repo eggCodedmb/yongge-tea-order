@@ -137,9 +137,14 @@
 	const isLoading = ref(false)
 	const countdownText = ref('')
 	let timer: any = null
+	let orderId: number = 0
 
-	onMounted(() => {
-		fetchOrderDetail()
+	onLoad((options: any) => {
+		const idStr = options['id']
+		if (idStr != null) {
+			orderId = parseInt(idStr as string)
+			fetchOrderDetail()
+		}
 	})
 
 	onUnmounted(() => {
@@ -150,12 +155,13 @@
 	})
 
 	async function fetchOrderDetail() {
+		if (orderId === 0) return
 		isLoading.value = true
 		try {
 			const res = await request<any>({
 				url: '/order/detail',
 				method: 'GET',
-				data: { id: parseInt(props.id) }
+				data: { id: orderId }
 			})
 			order.value = res.result
 			
@@ -359,7 +365,8 @@
 				quantity: item.quantity,
 				specs: specsArray,
 				toppings: [],
-				totalPrice: parseFloat(item.price || '0') * item.quantity
+				totalPrice: parseFloat(item.price || '0') * item.quantity,
+				image: item.product?.goods_img || ''
 			}
 			cartStore.addToCart(cartItem)
 		})

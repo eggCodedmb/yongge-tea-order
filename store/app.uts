@@ -11,7 +11,8 @@ export interface StoreInfo {
 export const useAppStore = defineStore('app', {
 	state: () => ({
 		currentStore: null as StoreInfo | null,
-		orderMode: 'self-pickup' as 'self-pickup' | 'delivery'
+		orderMode: 'self-pickup' as 'self-pickup' | 'delivery',
+		orderTabIndex: 0
 	}),
 	actions: {
 		setStore(store: StoreInfo) {
@@ -19,6 +20,9 @@ export const useAppStore = defineStore('app', {
 		},
 		setOrderMode(mode: 'self-pickup' | 'delivery') {
 			this.orderMode = mode
+		},
+		setOrderTabIndex(index: number) {
+			this.orderTabIndex = index
 		}
 	}
 })

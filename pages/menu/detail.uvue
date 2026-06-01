@@ -52,9 +52,9 @@
 </template>
 
 <script setup lang="uts">
-	import { ref, computed, onMounted } from 'vue'
+	import { ref, computed } from 'vue'
 	import { useCartStore, CartItem } from '@/store/cart.uts'
-	import { request } from '@/utils/request.uts'
+	import { request, BASE_URL } from '@/utils/request.uts'
 
 	interface SpecOption {
 		id: number;
@@ -88,12 +88,31 @@
 		return product.value?.specs || [] as SpecGroup[]
 	})
 
-	onMounted(() => {
+	onLoad((options: any) => {
+		const id = options['id']
+		if (id == null) return
+
+		const productId = parseInt(id as string)
+		
+		// 1. 尝试从缓存中提取基础信息先显示，防止页面“分块”显示
 		const data = uni.getStorageSync('current_product')
 		if (data != null) {
 			const basicInfo = JSON.parse(data as string) as UTSJSONObject
-			fetchProductDetail(basicInfo['id'] as number)
+			if (basicInfo['id'] == productId) {
+				// 填充基础字段，specs 先设为空
+				product.value = {
+					id: productId,
+					name: basicInfo['name'] as string,
+					desc: basicInfo['desc'] as string,
+					basePrice: basicInfo['price'] as number,
+					image: basicInfo['image'] as string,
+					specs: [] as SpecGroup[]
+				} as ProductDetail
+			}
 		}
+
+		// 2. 异步获取完整详情（规格等）
+		fetchProductDetail(productId)
 	})
 
 	async function fetchProductDetail(id: number) {
@@ -117,6 +136,20 @@
 				} as SpecGroup
 			})
 
+			// 准备规格默认选择（在更新 product 之前准备好，防止多次渲染）
+			const tempSpecsMap = {} as UTSJSONObject
+			const tempPriceMap = {} as UTSJSONObject
+			mappedSpecs.forEach((spec : SpecGroup) => {
+				if (spec.options.length > 0) {
+					tempSpecsMap[spec.name] = spec.options[0].name
+					tempPriceMap[spec.name] = spec.options[0].price_delta
+				}
+			})
+
+			// 统一更新状态
+			selectedSpecsMap.value = tempSpecsMap
+			selectedSpecsPriceMap.value = tempPriceMap
+
 			product.value = {
 				id: raw.id,
 				name: raw.goods_name,
@@ -125,14 +158,6 @@
 				image: raw.goods_img || '',
 				specs: mappedSpecs
 			} as ProductDetail
-
-			// 初始化默认选择
-			mappedSpecs.forEach((spec : SpecGroup) => {
-				if (spec.options.length > 0) {
-					selectedSpecsMap.value[spec.name] = spec.options[0].name
-					selectedSpecsPriceMap.value[spec.name] = spec.options[0].price_delta
-				}
-			})
 		} catch (e) {
 			console.error('Fetch product detail failed', e)
 		}
@@ -168,7 +193,7 @@
 	function formatImageUrl(url: string): string {
 		if (url != '' && url.startsWith('http')) return url
 		if (url == '') return '/static/logo.png'
-		return 'http://127.0.0.1:8800' + url
+		return BASE_URL + url
 	}
 
 	function handleAddToCart() {
