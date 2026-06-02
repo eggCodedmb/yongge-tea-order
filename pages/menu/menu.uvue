@@ -44,14 +44,14 @@
 						<text class="status-text">暂无商品</text>
 					</view>
 					
-					<view v-else v-for="product in cat.products" :key="product.id" class="product-item" @click="goToDetail(product)">
+					<view v-else v-for="product in cat.products" :key="product.id" class="product-item" @click="goToDetailPage(product)">
 						<image :src="formatImageUrl(product.image)" class="product-image" mode="aspectFill"></image>
 						<view class="product-info">
 							<text class="product-name">{{product.name}}</text>
 							<text class="product-desc">{{product.desc}}</text>
 							<view class="product-bottom">
 								<text class="product-price">￥{{product.price}}</text>
-								<view class="add-btn">
+								<view class="add-btn" @click.stop="openSpecDrawer(product)">
 									<text class="add-btn-text">选规格</text>
 								</view>
 							</view>
@@ -64,7 +64,7 @@
 		</view>
 
 		<!-- 购物车悬浮条 -->
-		<view class="cart-pill-bar" v-if="cartStore.totalCount > 0 && !isDetailPopupOpen" @click="toggleCartPopup">
+		<view :class="['cart-pill-bar', (cartStore.totalCount > 0 && !isDetailPopupOpen) ? 'show' : '']" @click="toggleCartPopup">
 			<view class="pill-left">
 				<view class="cart-icon-box">
 					<uni-icons type="cart-filled" size="30" color="#fff"></uni-icons>
@@ -133,27 +133,40 @@
 		</uni-popup>
 
 		<!-- 商品详情抽屉弹窗 (新加) -->
-		<uni-popup ref="detailPopup" type="bottom" background-color="transparent" :mask-click="true">
-			<view class="detail-drawer-card">
-				<!-- 顶部装饰手柄 -->
-				<view class="drawer-header-bar">
-					<view class="drawer-handle-line"></view>
-				</view>
-				
+		<uni-popup ref="detailPopup" type="bottom" background-color="transparent" :mask-click="true" @change="onDetailPopupChange">
+			<view class="detail-drawer-card" @touchmove.stop.prevent="">
 				<scroll-view class="detail-drawer-scroll" scroll-y v-if="detailProduct != null">
-					<!-- 商品大图 -->
-					<image :src="formatImageUrl(detailProduct!.image)" class="detail-drawer-image" mode="aspectFill"></image>
+					<!-- 商品大图区域：移到最顶部 -->
+					<view class="detail-image-container">
+						<image :src="formatImageUrl(detailProduct!.image)" class="detail-drawer-image" mode="aspectFill"></image>
+						
+						<!-- 叠加控制条 -->
+						<view class="detail-drawer-header-overlay">
+							<view class="drawer-handle-line white"></view>
+							<view class="detail-close-btn-blur" @click="detailPopup?.close()">
+								<uni-icons type="closeempty" size="18" color="#fff"></uni-icons>
+							</view>
+						</view>
+					</view>
 					
 					<view class="detail-drawer-content">
 						<view class="detail-info-section">
-							<text class="detail-product-name">{{detailProduct?.name}}</text>
+							<view class="detail-title-row">
+								<text class="detail-product-name">{{detailProduct?.name}}</text>
+							</view>
 							<text class="detail-product-desc">{{detailProduct?.desc}}</text>
 						</view>
 						
 						<!-- 规格选择区 -->
 						<view class="detail-spec-section" v-if="detailProduct!.specs.length > 0">
 							<view v-for="spec in detailProduct!.specs" :key="spec.id" class="detail-spec-group">
-								<text class="detail-spec-group-title">{{spec.name}}</text>
+								<view class="detail-spec-group-header">
+									<text class="detail-spec-group-title">{{spec.name}}</text>
+									<view class="detail-spec-group-tags">
+										<text class="detail-spec-tag required" v-if="spec.is_required">必选</text>
+										<text class="detail-spec-tag multiple" v-if="spec.select_type === 'multiple'">多选</text>
+									</view>
+								</view>
 								<view class="detail-spec-options">
 									<view 
 										v-for="opt in spec.options" 
@@ -162,7 +175,10 @@
 										@click="selectSpec(spec.name, opt.name, opt.price_delta)"
 									>
 										<text :class="['detail-spec-option-text', isSpecSelected(spec.name, opt.name) ? 'active-text' : '']">
-											{{opt.name}}{{opt.price_delta > 0 ? '(+' + opt.price_delta + ')' : ''}}
+											{{opt.name}}
+										</text>
+										<text v-if="opt.price_delta > 0" :class="['detail-spec-option-price', isSpecSelected(spec.name, opt.name) ? 'active-text' : '']">
+											+￥{{opt.price_delta}}
 										</text>
 									</view>
 								</view>
@@ -175,8 +191,11 @@
 				<!-- 详情底部加入购物车栏 -->
 				<view class="detail-footer-bar" v-if="detailProduct != null">
 					<view class="detail-footer-left">
-						<text class="detail-footer-price">￥{{detailTotalPrice}}</text>
-						<text class="detail-footer-specs">{{selectedSpecsValues.join('/')}}</text>
+						<view class="detail-footer-price-row">
+							<text class="detail-footer-currency">￥</text>
+							<text class="detail-footer-price">{{detailTotalPrice}}</text>
+						</view>
+						<text class="detail-footer-specs">{{selectedSpecsValues.length > 0 ? selectedSpecsValues.join('/') : '未选择规格'}}</text>
 					</view>
 					<view class="detail-add-cart-btn" @click="handleAddToCart">
 						<text class="detail-add-cart-text">加入购物车</text>
@@ -214,11 +233,14 @@
 		id: number;
 		name: string;
 		price_delta: number;
+		is_default: boolean;
 	}
 
 	interface SpecGroup {
 		id: number;
 		name: string;
+		select_type: string;
+		is_required: boolean;
 		options: SpecOption[];
 	}
 
@@ -243,6 +265,7 @@
 	const detailPopup = ref<any>(null)
 	const detailProduct = ref<ProductDetail | null>(null)
 	const selectedSpecsMap = ref<UTSJSONObject>({})
+	const selectedSpecIdsMap = ref<UTSJSONObject>({}) // 新增：存储选中的规格ID
 	const selectedSpecsPriceMap = ref<UTSJSONObject>({})
 	const isDetailPopupOpen = ref(false)
 
@@ -268,7 +291,12 @@
 		const res : string[] = []
 		const obj = selectedSpecsMap.value
 		Object.keys(obj).forEach((key : string) => {
-			res.push(obj[key] as string)
+			const val = obj[key]
+			if (Array.isArray(val)) {
+				(val as string[]).forEach(v => res.push(v))
+			} else if (val != null && val != '') {
+				res.push(val as string)
+			}
 		})
 		return res
 	})
@@ -379,7 +407,7 @@
 		return BASE_URL + urlStr
 	}
 
-	async function goToDetail(product: Product) {
+	async function openSpecDrawer(product: Product) {
 		// 1. 立即显示基础信息
 		detailProduct.value = {
 			id: product.id,
@@ -397,6 +425,13 @@
 		fetchProductDetail(product.id)
 	}
 
+	function goToDetailPage(product: Product) {
+		uni.setStorageSync('current_product', JSON.stringify(product))
+		uni.navigateTo({
+			url: `/pages/menu/detail?id=${product.id}`
+		})
+	}
+
 	async function fetchProductDetail(id: number) {
 		try {
 			const res = await request<any>({ url: `/goods/detail/${id}` })
@@ -406,26 +441,51 @@
 				return {
 					id: sg.id,
 					name: sg.name,
+					select_type: sg.select_type || 'single',
+					is_required: sg.is_required !== undefined ? sg.is_required : true,
 					options: (sg.spec_options || []).map((so : any) : SpecOption => {
 						return {
 							id: so.id,
 							name: so.name,
-							price_delta: parseFloat(so.price_delta || '0')
+							price_delta: parseFloat(so.price_delta || '0'),
+							is_default: so.is_default || false
 						} as SpecOption
 					})
 				} as SpecGroup
 			})
 
+			// 准备规格默认选择
 			const tempSpecsMap = {} as UTSJSONObject
+			const tempSpecIdsMap = {} as UTSJSONObject
 			const tempPriceMap = {} as UTSJSONObject
+			
 			mappedSpecs.forEach((spec : SpecGroup) => {
-				if (spec.options.length > 0) {
-					tempSpecsMap[spec.name] = spec.options[0].name
-					tempPriceMap[spec.name] = spec.options[0].price_delta
+				if (spec.select_type === 'single') {
+					// 单选：找标记为默认的，没有则不选（如果非必选）或选第一个（如果必选）
+					const defaultOpt = spec.options.find(opt => opt.is_default)
+					if (defaultOpt != null) {
+						tempSpecsMap[spec.name] = defaultOpt.name
+						tempSpecIdsMap[spec.name] = defaultOpt.id
+						tempPriceMap[spec.name] = defaultOpt.price_delta
+					} else if (spec.is_required && spec.options.length > 0) {
+						tempSpecsMap[spec.name] = spec.options[0].name
+						tempSpecIdsMap[spec.name] = spec.options[0].id
+						tempPriceMap[spec.name] = spec.options[0].price_delta
+					}
+				} else {
+					// 多选：找出所有标记为默认的
+					const defaultOpts = spec.options.filter(opt => opt.is_default)
+					const names = defaultOpts.map(opt => opt.name)
+					const ids = defaultOpts.map(opt => opt.id)
+					const price = defaultOpts.reduce((sum, opt) => sum + opt.price_delta, 0)
+					tempSpecsMap[spec.name] = names
+					tempSpecIdsMap[spec.name] = ids
+					tempPriceMap[spec.name] = price
 				}
 			})
 
 			selectedSpecsMap.value = tempSpecsMap
+			selectedSpecIdsMap.value = tempSpecIdsMap
 			selectedSpecsPriceMap.value = tempPriceMap
 
 			detailProduct.value = {
@@ -442,24 +502,94 @@
 	}
 
 	function isSpecSelected(specName: string, optionName: string): boolean {
-		return selectedSpecsMap.value[specName] === optionName
+		const val = selectedSpecsMap.value[specName]
+		if (Array.isArray(val)) {
+			return (val as string[]).includes(optionName)
+		}
+		return val === optionName
 	}
 
 	function selectSpec(specName: string, optionName: string, priceDelta: number) {
-		selectedSpecsMap.value[specName] = optionName
-		selectedSpecsPriceMap.value[specName] = priceDelta
+		const spec = detailProduct.value?.specs.find(s => s.name === specName)
+		if (spec == null) return
+		const opt = spec.options.find(o => o.name === optionName)
+		if (opt == null) return
+
+		if (spec.select_type === 'single') {
+			// 单选切换
+			if (selectedSpecsMap.value[specName] === optionName) {
+				// 如果是非必选，允许反选
+				if (!spec.is_required) {
+					delete selectedSpecsMap.value[specName]
+					delete selectedSpecIdsMap.value[specName]
+					delete selectedSpecsPriceMap.value[specName]
+				}
+			} else {
+				selectedSpecsMap.value[specName] = optionName
+				selectedSpecIdsMap.value[specName] = opt.id
+				selectedSpecsPriceMap.value[specName] = priceDelta
+			}
+		} else {
+			// 多选切换
+			let currentNames = (selectedSpecsMap.value[specName] as string[] | null) || []
+			let currentIds = (selectedSpecIdsMap.value[specName] as number[] | null) || []
+			
+			const idx = currentNames.indexOf(optionName)
+			if (idx > -1) {
+				currentNames.splice(idx, 1)
+				currentIds.splice(idx, 1)
+			} else {
+				currentNames.push(optionName)
+				currentIds.push(opt.id)
+			}
+			
+			// 重新计算该组总价
+			let groupPrice = 0
+			currentNames.forEach(name => {
+				const o = spec.options.find(opt_item => opt_item.name === name)
+				if (o != null) groupPrice += o.price_delta
+			})
+			
+			selectedSpecsMap.value[specName] = currentNames
+			selectedSpecIdsMap.value[specName] = currentIds
+			selectedSpecsPriceMap.value[specName] = groupPrice
+		}
 	}
 
 	function handleAddToCart() {
 		if (detailProduct.value == null) return
 		
+		// 必选校验
+		for (const spec of detailProduct.value!.specs) {
+			if (spec.is_required) {
+				const val = selectedSpecsMap.value[spec.name]
+				if (val == null || (Array.isArray(val) && (val as string[]).length === 0) || val === '') {
+					uni.showToast({ title: `请选择${spec.name}`, icon: 'none' })
+					return
+				}
+			}
+		}
+
+		// 收集选中的规格ID列表
+		const spec_ids: number[] = []
+		const idsObj = selectedSpecIdsMap.value
+		Object.keys(idsObj).forEach((key: string) => {
+			const val = idsObj[key]
+			if (Array.isArray(val)) {
+				(val as number[]).forEach(v => spec_ids.push(v))
+			} else if (val != null) {
+				spec_ids.push(val as number)
+			}
+		})
+		
 		const item: CartItem = {
 			id: detailProduct.value!.id,
 			cartId: 0,
 			name: detailProduct.value!.name,
-			price: detailTotalPrice.value, // 这里的 price 应该是包含规格的单价
+			price: detailTotalPrice.value, // 这里的 price 应该是包含规格后的单价
 			quantity: 1,
 			specs: selectedSpecsValues.value,
+			spec_ids: spec_ids,
 			toppings: [],
 			totalPrice: detailTotalPrice.value,
 			image: detailProduct.value!.image,
@@ -669,9 +799,18 @@
 		z-index: 90;
 		box-shadow: 0 16rpx 40rpx rgba(0,0,0,0.3);
 		overflow: visible;
-		/* #ifdef APP-ANDROID || APP-IOS */
-		backdrop-filter: blur(10px);
-		/* #endif */
+		/* 性能优化：避免闪烁 */
+		opacity: 0;
+		visibility: hidden;
+		transition: opacity 0.3s, visibility 0.3s, transform 0.3s;
+		transform: translateY(20rpx);
+		will-change: opacity, transform;
+	}
+
+	.cart-pill-bar.show {
+		opacity: 1;
+		visibility: visible;
+		transform: translateY(0);
 	}
 
 	.pill-left {
@@ -1007,90 +1146,177 @@
 		border-top-right-radius: 40rpx;
 		display: flex;
 		flex-direction: column;
-		max-height: 85vh;
+		max-height: 90vh;
 		overflow: hidden;
+		position: relative;
 	}
 
 	.detail-drawer-scroll {
 		flex: 1;
 	}
 
-	.detail-drawer-image {
+	.detail-image-container {
 		width: 750rpx;
-		height: 600rpx;
+		height: 560rpx;
+		border-top-left-radius: 40rpx;
+		border-top-right-radius: 40rpx;
+		position: relative;
+		overflow: hidden;
 		background-color: #f8f8f8;
 	}
 
+	.detail-drawer-image {
+		width: 750rpx;
+		height: 560rpx;
+	}
+
+	.detail-drawer-header-overlay {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		padding-top: 20rpx;
+		z-index: 10;
+	}
+
+	.detail-close-btn-blur {
+		position: absolute;
+		right: 30rpx;
+		top: 30rpx;
+		width: 64rpx;
+		height: 64rpx;
+		background-color: rgba(0,0,0,0.3);
+		border-radius: 32rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		/* #ifdef APP-ANDROID || APP-IOS */
+		backdrop-filter: blur(4px);
+		/* #endif */
+	}
+
+	.drawer-handle-line.white {
+		background-color: rgba(255,255,255,0.5);
+	}
+
 	.detail-drawer-content {
-		padding: 30rpx;
+		padding: 40rpx 32rpx;
 	}
 
 	.detail-info-section {
-		margin-bottom: 40rpx;
+		margin-bottom: 48rpx;
+	}
+
+	.detail-title-row {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
 	}
 
 	.detail-product-name {
-		font-size: 40rpx;
-		font-weight: bold;
-		color: #333;
-		display: block;
+		font-size: 42rpx;
+		font-weight: 800;
+		color: #111;
+		line-height: 1.2;
 	}
 
 	.detail-product-desc {
 		font-size: 26rpx;
-		color: #999;
+		color: #888;
 		margin-top: 16rpx;
-		display: block;
+		line-height: 1.5;
 	}
 
 	.detail-spec-section {
-		border-top: 1rpx solid #f5f5f5;
-		padding-top: 30rpx;
+		border-top: 1rpx solid #f2f2f2;
+		padding-top: 40rpx;
 	}
 
 	.detail-spec-group {
-		margin-bottom: 30rpx;
+		margin-bottom: 40rpx;
+	}
+
+	.detail-spec-group-header {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 24rpx;
 	}
 
 	.detail-spec-group-title {
-		font-size: 28rpx;
-		font-weight: bold;
-		color: #333;
-		margin-bottom: 20rpx;
-		display: block;
+		font-size: 30rpx;
+		font-weight: 700;
+		color: #222;
+	}
+
+	.detail-spec-group-tags {
+		display: flex;
+		flex-direction: row;
+		margin-left: 16rpx;
+	}
+
+	.detail-spec-tag {
+		font-size: 18rpx;
+		padding: 2rpx 12rpx;
+		border-radius: 6rpx;
+		margin-right: 8rpx;
+		font-weight: 500;
+	}
+
+	.detail-spec-tag.required {
+		background-color: #fff1f0;
+		color: #ff4d4f;
+	}
+
+	.detail-spec-tag.multiple {
+		background-color: #f6ffed;
+		color: #52c41a;
 	}
 
 	.detail-spec-options {
 		display: flex;
 		flex-direction: row;
 		flex-wrap: wrap;
+		margin-right: -16rpx;
 	}
 
 	.detail-spec-option {
-		background-color: #f8f8f8;
-		padding: 14rpx 28rpx;
-		border-radius: 10rpx;
-		margin-right: 18rpx;
-		margin-bottom: 18rpx;
-		border: 1rpx solid transparent;
+		background-color: #f6f6f6;
+		padding: 18rpx 36rpx;
+		border-radius: 40rpx;
+		margin-right: 20rpx;
+		margin-bottom: 20rpx;
+		border: 2rpx solid transparent;
 		display: flex;
+		flex-direction: row;
 		align-items: center;
-		justify-content: center;
+		transition: all 0.2s;
 	}
 
 	.detail-spec-option.active {
-		background-color: #e6f9f5;
+		background-color: #fff;
 		border-color: #00cc99;
+		box-shadow: 0 4rpx 12rpx rgba(0,204,153,0.15);
 	}
 
 	.detail-spec-option-text {
-		font-size: 24rpx;
-		color: #666;
+		font-size: 26rpx;
+		color: #555;
+	}
+
+	.detail-spec-option-price {
+		font-size: 22rpx;
+		color: #999;
+		margin-left: 4rpx;
 	}
 
 	.active-text {
 		color: #00cc99;
-		font-weight: bold;
+		font-weight: 700;
 	}
 
 	.detail-footer-bar {
@@ -1098,44 +1324,61 @@
 		display: flex;
 		flex-direction: row;
 		align-items: center;
-		padding: 20rpx 40rpx;
-		padding-bottom: calc(20rpx + constant(safe-area-inset-bottom));
-		padding-bottom: calc(20rpx + env(safe-area-inset-bottom));
-		box-shadow: 0 -2rpx 20rpx rgba(0,0,0,0.05);
+		justify-content: space-between;
+		padding: 24rpx 40rpx;
+		padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));
+		padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+		box-shadow: 0 -10rpx 40rpx rgba(0,0,0,0.06);
 	}
 
 	.detail-footer-left {
 		flex: 1;
 		display: flex;
 		flex-direction: column;
+		margin-right: 30rpx;
 	}
 
-	.detail-footer-price {
-		font-size: 38rpx;
+	.detail-footer-price-row {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+	}
+
+	.detail-footer-currency {
+		font-size: 28rpx;
 		color: #ff4d4f;
 		font-weight: bold;
 	}
 
+	.detail-footer-price {
+		font-size: 48rpx;
+		color: #ff4d4f;
+		font-weight: 800;
+		line-height: 1;
+	}
+
 	.detail-footer-specs {
-		font-size: 20rpx;
-		color: #999;
+		font-size: 22rpx;
+		color: #aaa;
+		margin-top: 8rpx;
 		lines: 1;
 		text-overflow: ellipsis;
 	}
 
 	.detail-add-cart-btn {
-		background-color: #00cc99;
-		width: 240rpx;
-		height: 80rpx;
-		border-radius: 40rpx;
+		background-image: linear-gradient(135deg, #00db8b 0%, #00cc99 100%);
+		width: 280rpx;
+		height: 96rpx;
+		border-radius: 48rpx;
 		display: flex;
 		align-items: center;
 		justify-content: center;
+		box-shadow: 0 12rpx 24rpx rgba(0,204,153,0.3);
 	}
 
 	.detail-add-cart-text {
 		color: #fff;
-		font-size: 28rpx;
+		font-size: 30rpx;
 		font-weight: bold;
 	}
 </style>

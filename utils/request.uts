@@ -29,18 +29,24 @@ export function request<T>(options: RequestOptions): Promise<ApiResponse<T>> {
 			data: options.data,
 			header: headers,
 			success: (res) => {
-				const data = res.data as ApiResponse<T>
-				if (data.code === 0) {
+				const data = res.data as ApiResponse<T> | null
+				if (data != null && data.code === 0) {
 					resolve(data)
 				} else {
-					// 处理 Token 过期等特殊 code (根据后端定义)
-					if (data.code === 10101) { // 假设 10101 是 token 过期
+					// 处理 Token 过期、错误、未携带等 code
+					const errorCode = (data != null && data.code != null) ? data.code.toString() : ''
+					if (errorCode === '10101' || errorCode === '10102' || errorCode === '10103') {
 						userStore.logout()
+						uni.showToast({
+							title: '登录已过期，请重新登录',
+							icon: 'none'
+						})
+					} else {
+						uni.showToast({
+							title: data.message || '请求失败',
+							icon: 'none'
+						})
 					}
-					uni.showToast({
-						title: data.message || '请求失败',
-						icon: 'none'
-					})
 					reject(data)
 				}
 			},

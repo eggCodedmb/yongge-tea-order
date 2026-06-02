@@ -1,13 +1,21 @@
 <template>
 	<view class="page-container">
 		<!-- 状态头部 -->
-		<view class="status-header" :style="{ backgroundColor: getStatusColor(order?.state ?? 0) }">
-			<view class="status-info">
-				<text class="status-title">{{formatStatus(order?.state ?? 0)}}</text>
-				<text class="status-desc" v-if="order?.state === 0 && countdownText">支付剩余时间 {{countdownText}}</text>
-				<text class="status-desc" v-else>{{getStatusDesc(order?.state ?? 0)}}</text>
+		<view class="status-header" :class="'status-bg-' + getStatusClassSuffix(order?.state ?? 0)">
+			<view class="status-content">
+				<view class="status-text-area">
+					<text class="status-title">{{formatStatus(order?.state ?? 0)}}</text>
+					<text class="status-desc" v-if="order?.state === 0 && countdownText">支付剩余时间 {{countdownText}}</text>
+					<text class="status-desc" v-else>{{getStatusDesc(order?.state ?? 0)}}</text>
+				</view>
+				<view class="status-icon-box">
+					<uni-icons :type="getStatusIconType(order?.state ?? 0)" size="48" color="#ffffff"></uni-icons>
+				</view>
 			</view>
-			<text class="status-icon">{{getStatusIcon(order?.state ?? 0)}}</text>
+			<!-- 背景装饰 -->
+			<view class="status-decoration">
+				<uni-icons :type="getStatusIconType(order?.state ?? 0)" size="120" color="rgba(255, 255, 255, 0.1)"></uni-icons>
+			</view>
 		</view>
 
 		<scroll-view class="detail-content" scroll-y>
@@ -50,7 +58,7 @@
 				<view v-for="(item, index) in order?.order_items" :key="index" class="product-item">
 					<view class="product-info">
 						<text class="product-name">{{item.product?.goods_name}}</text>	
-						<text class="product-specs">{{item.specs}}</text>
+						<text class="product-specs" v-if="item.specs">{{item.specs}}</text>
 					</view>
 					<view class="product-right">
 						<text class="product-qty">x{{item.quantity}}</text>
@@ -123,6 +131,7 @@
 
 <script setup lang="uts">
 	import { ref, onMounted, onUnmounted } from 'vue'
+	import { onLoad } from '@dcloudio/uni-app'
 	import { request } from '@/utils/request.uts'
 	import { useCartStore, CartItem } from '@/store/cart.uts'
 
@@ -263,27 +272,29 @@
 		return new Date(order.value?.createdAt ?? Date.now()).getTime() + 15 * 60 * 1000
 	}
 
-	function getStatusColor(state: number): string {
+	function getStatusClassSuffix(state: number): string {
 		if (state === 0 && isOrderExpired()) {
-			return '#999999'
+			return 'expired'
 		}
 		switch(state) {
-			case 0: return '#FF9500' // 橙色
-			case 1: return '#00CC99' // 品牌色
-			case 2: return '#333333' // 深灰色
-			default: return '#999999' // 灰色
+			case 0: return 'pending'
+			case 1: return 'making'
+			case 2: return 'completed'
+			case 3: return 'rated'
+			default: return 'cancelled'
 		}
 	}
 
-	function getStatusIcon(state: number): string {
+	function getStatusIconType(state: number): string {
 		if (state === 0 && isOrderExpired()) {
-			return '✖️'
+			return 'clear'
 		}
 		switch(state) {
-			case 0: return '💳'
-			case 1: return '🍵'
-			case 2: return '✅'
-			default: return '✖️'
+			case 0: return 'wallet'
+			case 1: return 'shop-filled'
+			case 2: return 'checkbox-filled'
+			case 3: return 'star-filled'
+			default: return 'closeempty'
 		}
 	}
 
@@ -357,17 +368,26 @@
 			if (item.specs) {
 				specsArray = (item.specs as string).split('/')
 			}
+			
+			// 解析保存的规格ID
+			let specIdsArray: number[] = []
+			if (item.spec_ids) {
+				specIdsArray = (item.spec_ids as string).split(',').map((id : string) : number => parseInt(id))
+			}
 
 			const cartItem: CartItem = {
 				id: item.product?.id || 0,
+				cartId: 0,
 				name: item.product?.goods_name || '未知商品',
 				price: parseFloat(item.price || '0'),
 				quantity: item.quantity,
 				specs: specsArray,
+				spec_ids: specIdsArray,
 				toppings: [],
 				totalPrice: parseFloat(item.price || '0') * item.quantity,
-				image: item.product?.goods_img || ''
-			}
+				image: item.product?.goods_img || '',
+				selected: true
+			} as CartItem
 			cartStore.addToCart(cartItem)
 		})
 
@@ -413,40 +433,91 @@
 	}
 
 	.status-header {
-		padding: 60rpx 40rpx;
+		padding: 80rpx 40rpx 120rpx;
+		position: relative;
+		overflow: hidden;
+	}
+
+	.status-bg-pending {
+		background: linear-gradient(135deg, #FFB84D 0%, #FF9500 100%);
+	}
+
+	.status-bg-making {
+		background: linear-gradient(135deg, #00E0A3 0%, #00CC99 100%);
+	}
+
+	.status-bg-completed, .status-bg-rated {
+		background: linear-gradient(135deg, #4D4D4D 0%, #333333 100%);
+	}
+
+	.status-bg-expired, .status-bg-cancelled {
+		background: linear-gradient(135deg, #CCCCCC 0%, #999999 100%);
+	}
+
+	.status-content {
 		display: flex;
 		flex-direction: row;
 		justify-content: space-between;
 		align-items: center;
+		position: relative;
+		z-index: 2;
 	}
 
-	.status-info {
+	.status-text-area {
 		display: flex;
 		flex-direction: column;
+		flex: 1;
 	}
 
 	.status-title {
-		font-size: 40rpx;
-		font-weight: bold;
+		font-size: 48rpx;
+		font-weight: 800;
 		color: #ffffff;
-		margin-bottom: 12rpx;
+		margin-bottom: 16rpx;
+		text-shadow: 0 2rpx 4rpx rgba(0,0,0,0.1);
 	}
 
 	.status-desc {
-		font-size: 24rpx;
-		color: rgba(255, 255, 255, 0.8);
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.9);
+		line-height: 1.4;
 	}
 
-	.status-icon {
-		font-size: 80rpx;
+	.status-icon-box {
+		width: 120rpx;
+		height: 120rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.status-decoration {
+		position: absolute;
+		right: -30rpx;
+		bottom: -30rpx;
+		z-index: 1;
+		opacity: 0.15;
+		transform: rotate(-15deg);
+	}
+
+	@keyframes status-pulse {
+		0% { transform: scale(1); }
+		50% { transform: scale(1.1); }
+		100% { transform: scale(1); }
+	}
+
+	.status-bg-making .status-icon-box {
+		animation: status-pulse 2s infinite ease-in-out;
 	}
 
 	.detail-content {
 		flex: 1;
-		margin-top: -30rpx;
-		border-radius: 32rpx 32rpx 0 0;
+		margin-top: -60rpx;
+		border-radius: 60rpx 60rpx 0 0;
 		background-color: #f8f9fb;
-		padding-top: 30rpx;
+		padding-top: 40rpx;
+		position: relative;
+		z-index: 3;
 	}
 
 	.card {

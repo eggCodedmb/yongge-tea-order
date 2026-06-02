@@ -88,6 +88,7 @@
 
 <script setup lang="uts">
 	import { ref, onMounted } from 'vue'
+	import { onShow } from '@dcloudio/uni-app'
 	import { request } from '@/utils/request.uts'
 	import { useUserStore } from '@/store/user.uts'
 	import { useCartStore, CartItem } from '@/store/cart.uts'
@@ -109,8 +110,9 @@
 		// 检查是否有从“我的”页面传过来的初始 Tab 索引
 		if (appStore.orderTabIndex !== activeTab.value) {
 			activeTab.value = appStore.orderTabIndex
-			fetchOrders()
 		}
+		// 每次进入页面都刷新一次列表，确保能看到最新订单状态
+		fetchOrders()
 	})
 
 	async function fetchOrders() {
@@ -190,16 +192,25 @@
 				specsArray = (item.specs as string).split('/')
 			}
 			
+			// 解析保存的规格ID
+			let specIdsArray: number[] = []
+			if (item.spec_ids) {
+				specIdsArray = (item.spec_ids as string).split(',').map((id : string) : number => parseInt(id))
+			}
+			
 			const cartItem: CartItem = {
 				id: item.product?.id || 0,
+				cartId: 0,
 				name: item.product?.goods_name || '未知商品',
 				price: parseFloat(item.price || '0'),
 				quantity: item.quantity,
 				specs: specsArray,
+				spec_ids: specIdsArray,
 				toppings: [],
 				totalPrice: parseFloat(item.price || '0') * item.quantity,
-				image: item.product?.goods_img || ''
-			}
+				image: item.product?.goods_img || '',
+				selected: true
+			} as CartItem
 			cartStore.addToCart(cartItem)
 		})
 		

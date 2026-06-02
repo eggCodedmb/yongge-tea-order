@@ -112,9 +112,29 @@
 	import { useAppStore } from '@/store/app.uts'
 	import { useCartStore } from '@/store/cart.uts'
 	import { request } from '@/utils/request.uts'
+	import { onShow } from '@dcloudio/uni-app'
 
 	const userStore = useUserStore()
 	const cartStore = useCartStore()
+
+	onShow(() => {
+		checkSession()
+	})
+
+	async function checkSession() {
+		if (userStore.token == '') return
+		
+		try {
+			// 通过请求一个需要权限的接口来校验 token 是否有效
+			await request<any>({
+				url: '/user/permissions',
+				method: 'GET'
+			})
+		} catch (e) {
+			// request 拦截器已经处理了 logout
+			console.log('Session check failed, user logged out')
+		}
+	}
 
 	function handleLogin() {
 		if (userStore.token != '') return
