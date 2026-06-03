@@ -61,6 +61,12 @@
 			"style": {
 				"navigationBarTitleText": "切换门店"
 			}
+		},
+		{
+			"path": "pages/profile/profile-edit",
+			"style": {
+				"navigationBarTitleText": "个人信息"
+			}
 		}
 	,{
     "path": "uni_modules/uni-pay-x/pages/success/success",

@@ -47,7 +47,7 @@ Currently, the project is configured for the Uni-app ecosystem.
 ### API Requests
 - Always use the `request` function from `utils/request.uts` for network calls.
 - Define interfaces for API responses to ensure type safety.
-- The base URL is currently set to `http://192.168.1.225:8800`.
+- The base URL is currently set to `http://192.168.2.240:8800`.
 
 ### Typing (UTS)
 - Embrace the strong typing features of UTS. Define interfaces for data structures (e.g., `CartItem`, `ApiResponse`).

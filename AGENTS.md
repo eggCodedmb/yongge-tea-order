@@ -46,7 +46,7 @@ const response = await request<YourResponseType>({
 ```
 
 Key behaviors:
-- Base URL: `http://192.168.1.225:8800` (configured in `request.uts`)
+- Base URL: `http://192.168.2.240:8800` (configured in `request.uts`)
 - Automatically injects `Authorization: Bearer ${token}` header from user store
 - Handles token expiration (code 10101) by auto-logout
 - Shows toast notifications for errors

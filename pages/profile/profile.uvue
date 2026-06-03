@@ -6,8 +6,8 @@
 				<view class="user-info-row" @click="handleLogin">
 					<view class="avatar-wrapper">
 						<image :src="userStore.userInfo?.avatar || '/static/logo.png'" class="avatar" mode="aspectFill"></image>
-						<view class="edit-badge" v-if="userStore.token != ''">
-							<text class="edit-icon">✎</text>
+						<view class="edit-badge" v-if="userStore.token != ''" @click.stop="goToProfileEdit">
+							<uni-icons type="compose" size="16" color="#fff"></uni-icons>
 						</view>
 					</view>
 					<view class="user-text-meta">
@@ -52,19 +52,19 @@
 					</view>
 					<view class="status-flex">
 						<view class="status-box" @click="goToOrders(2)">
-							<text class="s-emoji">💳</text>
+							<uni-icons type="wallet" size="24" color="#00cc99"></uni-icons>
 							<text class="s-label">待付款</text>
 						</view>
 						<view class="status-box" @click="goToOrders(0)">
-							<text class="s-emoji">🍵</text>
+							<uni-icons type="shop-filled" size="24" color="#00cc99"></uni-icons>
 							<text class="s-label">制作中</text>
 						</view>
 						<view class="status-box" @click="goToOrders(0)">
-							<text class="s-emoji">🛵</text>
+							<uni-icons type="paperplane-filled" size="24" color="#00cc99"></uni-icons>
 							<text class="s-label">配送中</text>
 						</view>
 						<view class="status-box" @click="goToOrders(1)">
-							<text class="s-emoji">💬</text>
+							<uni-icons type="chat-filled" size="24" color="#00cc99"></uni-icons>
 							<text class="s-label">待评价</text>
 						</view>
 					</view>
@@ -73,22 +73,30 @@
 				<!-- 更多服务列表 -->
 				<view class="module-card no-padding">
 					<view class="list-item" hover-class="item-hover" @click="goToAddress">
-						<text class="list-icon">📍</text>
+						<view class="list-icon-wrap">
+							<uni-icons type="location-filled" size="20" color="#00cc99"></uni-icons>
+						</view>
 						<text class="list-text">收货地址</text>
 						<view class="css-arrow-right-large"></view>
 					</view>
 					<view class="list-item" hover-class="item-hover">
-						<text class="list-icon">🎁</text>
+						<view class="list-icon-wrap">
+							<uni-icons type="gift" size="20" color="#ff6b6b"></uni-icons>
+						</view>
 						<text class="list-text">邀请有礼</text>
 						<view class="css-arrow-right-large"></view>
 					</view>
 					<view class="list-item" hover-class="item-hover">
-						<text class="list-icon">🛠️</text>
+						<view class="list-icon-wrap">
+							<uni-icons type="help" size="20" color="#ffa726"></uni-icons>
+						</view>
 						<text class="list-text">常见问题</text>
 						<view class="css-arrow-right-large"></view>
 					</view>
 					<view class="list-item" hover-class="item-hover" @click="contactService">
-						<text class="list-icon">📞</text>
+						<view class="list-icon-wrap">
+							<uni-icons type="phone" size="20" color="#42a5f5"></uni-icons>
+						</view>
 						<text class="list-text">在线客服</text>
 						<view class="css-arrow-right-large"></view>
 					</view>
@@ -96,9 +104,10 @@
 
 				<!-- 退出登录 -->
 				<view class="logout-btn-wrap" v-if="userStore.token != ''" @click="handleLogout">
+					<uni-icons type="poweroff" size="18" color="#ff4d4f"></uni-icons>
 					<text class="logout-text">退出当前账号</text>
 				</view>
-				
+
 				<view class="footer-copy">
 					<text class="copy-text">© 勇哥茶饮 点物小程序 v1.0.3</text>
 				</view>
@@ -123,7 +132,7 @@
 
 	async function checkSession() {
 		if (userStore.token == '') return
-		
+
 		try {
 			// 通过请求一个需要权限的接口来校验 token 是否有效
 			await request<any>({
@@ -137,8 +146,11 @@
 	}
 
 	function handleLogin() {
-		if (userStore.token != '') return
-		
+		if (userStore.token != '') {
+			goToProfileEdit()
+			return
+		}
+
 		uni.login({
 			provider: 'weixin',
 			success: (res) => {
@@ -161,18 +173,18 @@
 				method: 'POST',
 				data: {
 					code: code,
-					userInfo: { 
-						nick_name: '益友会员', 
-						avatar: '' 
+					userInfo: {
+						nick_name: '益友会员',
+						avatar: ''
 					}
 				}
 			})
-			
+
 			uni.hideLoading()
-			
+
 			const result = res.result as UTSJSONObject
 			const user = result['user'] as UTSJSONObject
-			
+
 			userStore.setUserInfo({
 				nickname: user['nick_name'] as string || '益友会员',
 				avatar: user['avatar'] as string || '',
@@ -180,7 +192,7 @@
 				points: (user['points'] as number || 0)
 			})
 			userStore.setToken(result['accessToken'] as string)
-			
+
 			uni.showToast({ title: '登录成功', icon: 'success' })
 		} catch (e) {
 			uni.hideLoading()
@@ -201,6 +213,12 @@
 		})
 	}
 
+	function goToProfileEdit() {
+		uni.navigateTo({
+			url: '/pages/profile/profile-edit'
+		})
+	}
+
 	function goToOrders(index: number = 0) {
 		const appStore = useAppStore()
 		appStore.setOrderTabIndex(index)
@@ -214,7 +232,7 @@
 			url: '/pages/profile/address'
 		})
 	}
-	
+
 	function contactService() {
 		uni.showToast({ title: '客服正在赶来...', icon: 'none' })
 	}
@@ -270,11 +288,6 @@
 		align-items: center;
 		justify-content: center;
 		border: 2rpx solid #fff;
-	}
-
-	.edit-icon {
-		color: #fff;
-		font-size: 20rpx;
 	}
 
 	.user-text-meta {
@@ -417,14 +430,10 @@
 		align-items: center;
 	}
 
-	.s-emoji {
-		font-size: 48rpx;
-		margin-bottom: 12rpx;
-	}
-
 	.s-label {
 		font-size: 24rpx;
 		color: #666;
+		margin-top: 12rpx;
 	}
 
 	/* 列表项 */
@@ -440,8 +449,14 @@
 		background-color: #fafafa;
 	}
 
-	.list-icon {
-		font-size: 36rpx;
+	.list-icon-wrap {
+		width: 48rpx;
+		height: 48rpx;
+		border-radius: 12rpx;
+		background-color: #f7f8fa;
+		display: flex;
+		align-items: center;
+		justify-content: center;
 		margin-right: 24rpx;
 	}
 
@@ -474,6 +489,7 @@
 		background-color: #fff;
 		border-radius: 24rpx;
 		display: flex;
+		flex-direction: row;
 		align-items: center;
 		justify-content: center;
 		margin-top: 40rpx;
@@ -483,6 +499,7 @@
 		color: #ff4d4f;
 		font-size: 30rpx;
 		font-weight: 500;
+		margin-left: 12rpx;
 	}
 
 	.footer-copy {

@@ -1,0 +1,523 @@
+<template>
+	<view class="page-container">
+		<scroll-view class="edit-scroll" scroll-y>
+			<!-- 头像区域 - 现代设计 -->
+			<view class="avatar-section">
+				<view class="avatar-bg-card">
+					<!-- 装饰性圆形 -->
+					<view class="deco-circle deco-circle-1"></view>
+					<view class="deco-circle deco-circle-2"></view>
+					<view class="deco-circle deco-circle-3"></view>
+
+					<view class="avatar-content" @click="showAvatarActions">
+						<view class="avatar-ring">
+							<view class="avatar-inner">
+								<image :src="form.avatar || '/static/logo.png'" class="avatar-img" mode="aspectFill"></image>
+							</view>
+							<view class="camera-badge">
+								<uni-icons type="camera-filled" size="18" color="#fff"></uni-icons>
+							</view>
+						</view>
+						<view class="avatar-hint-wrap">
+							<uni-icons type="refresh" size="14" color="rgba(255,255,255,0.8)"></uni-icons>
+							<text class="avatar-hint">点击更换头像</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<!-- 表单区域 - 卡片式设计 -->
+			<view class="form-section">
+				<view class="form-card">
+					<view class="form-header">
+						<text class="form-title">基本信息</text>
+						<view class="form-title-line"></view>
+					</view>
+
+					<view class="form-item" @click="focusNickname">
+						<view class="form-item-left">
+							<view class="item-icon-wrap item-icon-person">
+								<uni-icons type="person-filled" size="18" color="#00cc99"></uni-icons>
+							</view>
+							<text class="item-label">昵称</text>
+						</view>
+						<view class="form-item-right">
+							<input class="input-field" placeholder="请输入昵称" v-model="form.nickname" maxlength="20" />
+							<view class="input-arrow">
+								<uni-icons type="right" size="16" color="#ccc"></uni-icons>
+							</view>
+						</view>
+					</view>
+
+					<view class="form-item">
+						<view class="form-item-left">
+							<view class="item-icon-wrap item-icon-phone">
+								<uni-icons type="phone" size="18" color="#42a5f5"></uni-icons>
+							</view>
+							<text class="item-label">手机号</text>
+						</view>
+						<view class="form-item-right">
+							<text class="phone-value">{{form.phone || '未绑定'}}</text>
+							<view class="phone-badge" v-if="form.phone">
+								<uni-icons type="checkmarkempty" size="12" color="#00cc99"></uni-icons>
+								<text class="badge-text">已绑定</text>
+							</view>
+						</view>
+					</view>
+				</view>
+
+				<!-- 安全提示卡片 -->
+				<view class="tips-card">
+					<view class="tips-icon-wrap">
+						<uni-icons type="info" size="20" color="#8a6d00"></uni-icons>
+					</view>
+					<view class="tips-content">
+						<text class="tips-title">温馨提示</text>
+						<text class="tips-desc">修改个人信息后，点击下方按钮即可保存更新</text>
+					</view>
+				</view>
+			</view>
+		</scroll-view>
+
+		<!-- 底部保存按钮 - 现代设计 -->
+		<view class="footer-section">
+			<view class="footer-btn-wrap">
+				<button class="save-btn" @click="handleSave" :disabled="saving">
+					<view class="btn-content">
+						<uni-icons v-if="!saving" type="checkmarkempty" size="20" color="#fff"></uni-icons>
+						<text class="btn-text">{{saving ? '保存中...' : '保存修改'}}</text>
+					</view>
+				</button>
+			</view>
+		</view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, reactive, onMounted } from 'vue'
+	import { useUserStore } from '@/store/user.uts'
+	import { request } from '@/utils/request.uts'
+
+	const userStore = useUserStore()
+	const saving = ref(false)
+
+	const form = reactive({
+		nickname: '',
+		avatar: '',
+		phone: ''
+	})
+
+	onMounted(() => {
+		// 从 userStore 读取当前用户信息
+		if (userStore.userInfo) {
+			form.nickname = userStore.userInfo.nickname || ''
+			form.avatar = userStore.userInfo.avatar || ''
+			form.phone = userStore.userInfo.phone || ''
+		}
+	})
+
+	function focusNickname() {
+		// 点击昵称行时聚焦输入框
+	}
+
+	function showAvatarActions() {
+		uni.showActionSheet({
+			itemList: ['选择本地图片'],
+			success: (res) => {
+				if (res.tapIndex === 0) {
+					chooseLocalImage()
+				}
+			}
+		})
+	}
+
+	function chooseLocalImage() {
+		uni.chooseImage({
+			count: 1,
+			sizeType: ['compressed'],
+			sourceType: ['album', 'camera'],
+			success: (res) => {
+				const tempFilePaths = res.tempFilePaths as string[]
+				if (tempFilePaths.length > 0) {
+					form.avatar = tempFilePaths[0]
+				}
+			},
+			fail: (err) => {
+				console.error('选择图片失败', err)
+				uni.showToast({ title: '选择图片失败', icon: 'none' })
+			}
+		})
+	}
+
+	async function handleSave() {
+		if (!form.nickname.trim()) {
+			uni.showToast({ title: '请输入昵称', icon: 'none' })
+			return
+		}
+
+		saving.value = true
+		uni.showLoading({ title: '保存中...' })
+
+		try {
+			const updateData: UTSJSONObject = {
+				nick_name: form.nickname.trim()
+			}
+
+			if (form.avatar) {
+				updateData['avatar'] = form.avatar
+			}
+
+			await request<any>({
+				url: '/user/change-user',
+				method: 'PATCH',
+				data: updateData
+			})
+
+			uni.hideLoading()
+			saving.value = false
+
+			// 更新本地 store
+			userStore.setUserInfo({
+				nickname: form.nickname.trim(),
+				avatar: form.avatar,
+				phone: form.phone,
+				points: userStore.userInfo?.points || 0
+			})
+
+			uni.showToast({ title: '保存成功', icon: 'success' })
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 1500)
+		} catch (e) {
+			uni.hideLoading()
+			saving.value = false
+			console.error('保存失败', e)
+		}
+	}
+</script>
+
+<style>
+	.page-container {
+		background: linear-gradient(180deg, #f0f7f4 0%, #f7f8fa 30%, #f7f8fa 100%);
+		height: 100vh;
+		position: relative;
+	}
+
+	.edit-scroll {
+		height: 100%;
+		padding-bottom: 200rpx;
+	}
+
+	/* ========== 头像区域 - 现代设计 ========== */
+	.avatar-section {
+		padding: 40rpx 30rpx 0;
+	}
+
+	.avatar-bg-card {
+		background: linear-gradient(135deg, #00cc99 0%, #00e6aa 50%, #00cc99 100%);
+		border-radius: 32rpx;
+		padding: 80rpx 40rpx 60rpx;
+		position: relative;
+		overflow: hidden;
+		box-shadow: 0 20rpx 60rpx rgba(0, 204, 153, 0.35);
+	}
+
+	/* 装饰性圆形 */
+	.deco-circle {
+		position: absolute;
+		border-radius: 50%;
+		background: rgba(255, 255, 255, 0.1);
+	}
+
+	.deco-circle-1 {
+		width: 200rpx;
+		height: 200rpx;
+		top: -60rpx;
+		right: -40rpx;
+	}
+
+	.deco-circle-2 {
+		width: 150rpx;
+		height: 150rpx;
+		bottom: -30rpx;
+		left: -20rpx;
+	}
+
+	.deco-circle-3 {
+		width: 100rpx;
+		height: 100rpx;
+		top: 40rpx;
+		left: 60rpx;
+		background: rgba(255, 255, 255, 0.05);
+	}
+
+	.avatar-content {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		z-index: 1;
+		position: relative;
+	}
+
+	.avatar-ring {
+		width: 180rpx;
+		height: 180rpx;
+		border-radius: 90rpx;
+		background: rgba(255, 255, 255, 0.2);
+		padding: 8rpx;
+		position: relative;
+		margin-bottom: 24rpx;
+		overflow: visible;
+	}
+
+	.avatar-inner {
+		width: 100%;
+		height: 100%;
+		border-radius: 82rpx;
+		overflow: hidden;
+		background: #fff;
+		z-index: 1;
+	}
+
+	.avatar-img {
+		width: 100%;
+		height: 100%;
+		border-radius: 82rpx;
+	}
+
+	.camera-badge {
+		position: absolute;
+		right: 8rpx;
+		bottom: 8rpx;
+		width: 56rpx;
+		height: 56rpx;
+		border-radius: 28rpx;
+		background: linear-gradient(135deg, #333 0%, #555 100%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: 4rpx solid #fff;
+		box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.2);
+		z-index: 10;
+	}
+
+	.avatar-hint-wrap {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.avatar-hint {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.9);
+		font-weight: 500;
+		margin-left: 8rpx;
+	}
+
+	/* ========== 表单区域 - 卡片式设计 ========== */
+	.form-section {
+		padding: 30rpx 30rpx 0;
+	}
+
+	.form-card {
+		background: #fff;
+		border-radius: 24rpx;
+		padding: 0 32rpx;
+		box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.06);
+		margin-bottom: 24rpx;
+	}
+
+	.form-header {
+		padding: 32rpx 0 24rpx;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.form-title {
+		font-size: 32rpx;
+		font-weight: 600;
+		color: #1a1a1a;
+		margin-bottom: 12rpx;
+	}
+
+	.form-title-line {
+		width: 64rpx;
+		height: 6rpx;
+		background: linear-gradient(90deg, #00cc99 0%, #00e6aa 100%);
+		border-radius: 3rpx;
+	}
+
+	.form-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: space-between;
+		padding: 28rpx 0;
+		border-top: 1rpx solid #f5f5f5;
+	}
+
+	.form-item-left {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.item-icon-wrap {
+		width: 48rpx;
+		height: 48rpx;
+		border-radius: 12rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+	}
+
+	.item-icon-person {
+		background: linear-gradient(135deg, #e8f8f3 0%, #d0f0e6 100%);
+	}
+
+	.item-icon-phone {
+		background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+	}
+
+	.item-label {
+		font-size: 30rpx;
+		color: #333;
+		font-weight: 500;
+	}
+
+	.form-item-right {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		flex: 1;
+		justify-content: flex-end;
+	}
+
+	.input-field {
+		flex: 1;
+		font-size: 30rpx;
+		color: #333;
+		text-align: right;
+		margin-right: 12rpx;
+	}
+
+	.input-arrow {
+		width: 32rpx;
+		height: 32rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.phone-value {
+		font-size: 30rpx;
+		color: #666;
+		margin-right: 16rpx;
+	}
+
+	.phone-badge {
+		background: linear-gradient(135deg, #e8f8f3 0%, #d0f0e6 100%);
+		padding: 6rpx 16rpx;
+		border-radius: 20rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.badge-text {
+		font-size: 22rpx;
+		color: #00cc99;
+		font-weight: 500;
+		margin-left: 4rpx;
+	}
+
+	/* ========== 提示卡片 ========== */
+	.tips-card {
+		background: linear-gradient(135deg, #fff9e6 0%, #fff3cc 100%);
+		border-radius: 20rpx;
+		padding: 28rpx 24rpx;
+		display: flex;
+		flex-direction: row;
+		align-items: flex-start;
+		border: 1rpx solid rgba(255, 200, 0, 0.2);
+	}
+
+	.tips-icon-wrap {
+		width: 48rpx;
+		height: 48rpx;
+		border-radius: 24rpx;
+		background: rgba(255, 200, 0, 0.2);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 16rpx;
+		margin-top: 4rpx;
+	}
+
+	.tips-content {
+		flex: 1;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.tips-title {
+		font-size: 28rpx;
+		color: #8a6d00;
+		font-weight: 600;
+		margin-bottom: 8rpx;
+	}
+
+	.tips-desc {
+		font-size: 24rpx;
+		color: #a68a00;
+		line-height: 1.5;
+	}
+
+	/* ========== 底部保存按钮 - 现代设计 ========== */
+	.footer-section {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		padding: 24rpx 30rpx;
+		padding-bottom: calc(24rpx + constant(safe-area-inset-bottom));
+		padding-bottom: calc(24rpx + env(safe-area-inset-bottom));
+		background: linear-gradient(180deg, rgba(247, 248, 250, 0) 0%, rgba(247, 248, 250, 1) 40%);
+	}
+
+	.footer-btn-wrap {
+		padding: 0 20rpx;
+	}
+
+	.save-btn {
+		background: linear-gradient(135deg, #00cc99 0%, #00e6aa 100%);
+		border-radius: 56rpx;
+		height: 96rpx;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		border: none;
+		box-shadow: 0 12rpx 40rpx rgba(0, 204, 153, 0.4);
+	}
+
+	.save-btn[disabled] {
+		opacity: 0.7;
+		box-shadow: 0 8rpx 24rpx rgba(0, 204, 153, 0.2);
+	}
+
+	.btn-content {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.btn-text {
+		color: #fff;
+		font-size: 34rpx;
+		font-weight: 600;
+		letter-spacing: 2rpx;
+		margin-left: 12rpx;
+	}
+</style>
