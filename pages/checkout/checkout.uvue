@@ -120,6 +120,48 @@
 		})
 	}
 
+	/**
+	 * 库存预检查 - 在创建订单前检查商品库存是否充足
+	 */
+	async function checkStock(): Promise<boolean> {
+		const selectedItems = cartStore.items.filter(i => i.selected)
+		if (selectedItems.length === 0) return false
+
+		try {
+			const res = await request<any>({
+				url: '/order/check_stock',
+				method: 'POST',
+				data: {
+					items: selectedItems.map(item => ({
+						goods_id: item.id,
+						quantity: item.quantity,
+						name: item.name
+					}))
+				}
+			})
+
+			if (res.result != null && !res.result.all_available) {
+				// 找出库存不足的商品
+				const unavailableItems = (res.result.items as any[]).filter((i: any) => !i.available)
+				const itemNames = unavailableItems.map((i: any) => `${i.name}(库存:${i.stock})`).join('、')
+
+				uni.showModal({
+					title: '库存不足',
+					content: `以下商品库存不足：${itemNames}，请修改数量后再试`,
+					showCancel: false,
+					confirmText: '知道了'
+				})
+				return false
+			}
+
+			return true
+		} catch (e) {
+			console.error('库存检查失败:', e)
+			// 检查接口失败时不阻塞，让创建订单接口来判断
+			return true
+		}
+	}
+
 	async function handlePay() {
 		if (userStore.token == '') {
 			uni.showToast({ title: '请先登录', icon: 'none' })
@@ -137,6 +179,10 @@
 			uni.showToast({ title: '请选择收货地址', icon: 'none' })
 			return
 		}
+
+		// 库存预检查
+		const stockOk = await checkStock()
+		if (!stockOk) return
 
 		// --- 完全模拟支付流程，屏蔽后端报错 ---
 		uni.showLoading({ title: '正在提交订单...' })
@@ -164,7 +210,7 @@
 
 	async function onMockPaySuccess() {
 		uni.showLoading({ title: '支付处理中...' })
-		
+
 		try {
 			// 即使是模拟，我们也尝试告知后端创建订单（如果后端逻辑允许）
 			// 如果后端依然报错，我们就在 catch 里继续模拟成功的 UI 流程
@@ -179,7 +225,7 @@
 				}
 			})
 			currentOrderId.value = createRes.result.id
-			
+
 			// 通知后端支付成功
 			await request<any>({
 				url: '/order/pay_success',
@@ -190,24 +236,42 @@
 					transaction_id: `MOCK_TRANS_${Date.now()}`
 				}
 			})
-		} catch (e) {
-			console.log('后端订单创建或支付通知失败(正常现象，已屏蔽):', e)
+
+			uni.hideLoading()
+			uni.showToast({ title: '支付成功', icon: 'success' })
+
+			// 清空购物车中已选中的商品
+			const remainingItems = cartStore.items.filter(i => !i.selected)
+			cartStore.items = remainingItems
+			cartStore.saveToStorage()
+
+			// 跳转到订单列表
+			setTimeout(() => {
+				uni.switchTab({
+					url: '/pages/order/order'
+				})
+			}, 1500)
+		} catch (e: any) {
+			uni.hideLoading()
+			console.error('订单创建失败:', e)
+
+			// 判断是否是库存不足错误
+			const errorMsg = e.message || '订单创建失败'
+			if (errorMsg.includes('库存不足')) {
+				uni.showModal({
+					title: '库存不足',
+					content: '商品库存不足，请返回购物车修改数量',
+					confirmText: '返回购物车',
+					success: (res) => {
+						if (res.confirm) {
+							uni.navigateBack()
+						}
+					}
+				})
+			} else {
+				uni.showToast({ title: errorMsg, icon: 'none' })
+			}
 		}
-
-		uni.hideLoading()
-		uni.showToast({ title: '支付成功', icon: 'success' })
-
-		// 清空购物车中已选中的商品
-		const remainingItems = cartStore.items.filter(i => !i.selected)
-		cartStore.items = remainingItems
-		cartStore.saveToStorage()
-
-		// 跳转到订单列表
-		setTimeout(() => {
-			uni.switchTab({
-				url: '/pages/order/order'
-			})
-		}, 1500)
 	}
 
 	// uni-pay-x 回调：支付订单创建成功
