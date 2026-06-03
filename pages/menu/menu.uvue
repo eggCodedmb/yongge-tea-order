@@ -44,15 +44,29 @@
 						<text class="status-text">暂无商品</text>
 					</view>
 					
-					<view v-else v-for="product in cat.products" :key="product.id" class="product-item" @click="goToDetailPage(product)">
-						<image :src="formatImageUrl(product.image)" class="product-image" mode="aspectFill"></image>
+					<view v-else v-for="product in cat.products" :key="product.id" :class="['product-item', product.stock <= 0 ? 'sold-out' : '']" @click="goToDetailPage(product)">
+						<view class="product-image-wrapper">
+							<image :src="formatImageUrl(product.image)" class="product-image" mode="aspectFill"></image>
+							<!-- 缺货遮罩层 -->
+							<view v-if="product.stock <= 0" class="sold-out-overlay">
+								<view class="sold-out-badge">
+									<text class="sold-out-text">已售罄</text>
+								</view>
+							</view>
+						</view>
 						<view class="product-info">
 							<text class="product-name">{{product.name}}</text>
 							<text class="product-desc">{{product.desc}}</text>
 							<view class="product-bottom">
-								<text class="product-price">￥{{product.price}}</text>
-								<view class="add-btn" @click.stop="openSpecDrawer(product)">
+								<view class="price-info">
+									<text class="product-price">￥{{product.price}}</text>
+									<text v-if="product.stock > 0 && product.stock <= 5" class="low-stock-tag">仅剩{{product.stock}}件</text>
+								</view>
+								<view v-if="product.stock > 0" class="add-btn" @click.stop="openSpecDrawer(product)">
 									<text class="add-btn-text">选规格</text>
+								</view>
+								<view v-else class="add-btn disabled">
+									<text class="add-btn-text">已售罄</text>
 								</view>
 							</view>
 						</view>
@@ -219,6 +233,7 @@
 		desc: string;
 		price: number;
 		image: string;
+		stock: number; // 库存数量
 	}
 
 	interface Category {
@@ -378,10 +393,11 @@
 			category.products = rawList.map((item : any) : Product => {
 				return {
 					id: item.id,
-					name: item.goods_name, 
-					desc: item.goods_detail || '', 
+					name: item.goods_name,
+					desc: item.goods_detail || '',
 					price: parseFloat(item.goods_price || '0'),
-					image: item.goods_img || ''
+					image: item.goods_img || '',
+					stock: item.goods_num || 0 // 库存数量
 				} as Product
 			})
 		} catch (e) {
@@ -408,6 +424,12 @@
 	}
 
 	async function openSpecDrawer(product: Product) {
+		// 缺货商品不允许打开规格选择
+		if (product.stock <= 0) {
+			uni.showToast({ title: '该商品已售罄', icon: 'none' })
+			return
+		}
+
 		// 1. 立即显示基础信息
 		detailProduct.value = {
 			id: product.id,
@@ -426,6 +448,11 @@
 	}
 
 	function goToDetailPage(product: Product) {
+		// 缺货商品不允许进入详情页
+		if (product.stock <= 0) {
+			uni.showToast({ title: '该商品已售罄', icon: 'none' })
+			return
+		}
 		uni.setStorageSync('current_product', JSON.stringify(product))
 		uni.navigateTo({
 			url: `/pages/menu/detail?id=${product.id}`
@@ -753,10 +780,26 @@
 		align-items: center;
 	}
 
+	.price-info {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+	}
+
 	.product-price {
 		font-size: 32rpx;
 		color: #ff4d4f;
 		font-weight: bold;
+	}
+
+	.low-stock-tag {
+		font-size: 18rpx;
+		color: #ff6b35;
+		background-color: #fff3e6;
+		padding: 2rpx 8rpx;
+		border-radius: 8rpx;
+		margin-left: 8rpx;
+		font-weight: 500;
 	}
 
 	.add-btn {
@@ -765,9 +808,66 @@
 		border-radius: 24rpx;
 	}
 
+	.add-btn.disabled {
+		background-color: #ccc;
+		opacity: 0.8;
+	}
+
 	.add-btn-text {
 		color: #fff;
 		font-size: 22rpx;
+	}
+
+	/* 缺货状态样式 */
+	.product-item.sold-out {
+		opacity: 0.85;
+	}
+
+	.product-image-wrapper {
+		position: relative;
+		width: 160rpx;
+		height: 160rpx;
+		margin-right: 20rpx;
+		border-radius: 12rpx;
+		overflow: hidden;
+	}
+
+	.product-image {
+		width: 160rpx;
+		height: 160rpx;
+		border-radius: 12rpx;
+		background-color: #f0f0f0;
+	}
+
+	.product-item.sold-out .product-image {
+		filter: grayscale(60%);
+	}
+
+	.sold-out-overlay {
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		background: linear-gradient(135deg, rgba(0,0,0,0.1) 0%, rgba(0,0,0,0.3) 100%);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.sold-out-badge {
+		background: linear-gradient(135deg, #666 0%, #444 100%);
+		padding: 8rpx 20rpx;
+		border-radius: 20rpx;
+		transform: rotate(-15deg);
+		box-shadow: 0 4rpx 12rpx rgba(0,0,0,0.3);
+	}
+
+	.sold-out-text {
+		color: #fff;
+		font-size: 20rpx;
+		font-weight: bold;
+		letter-spacing: 2rpx;
 	}
 
 	.status-box {
