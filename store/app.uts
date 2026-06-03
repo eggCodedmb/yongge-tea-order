@@ -6,6 +6,8 @@ export interface StoreInfo {
 	address: string;
 	distance: any;
 	business_hours?: string;
+	longitude?: number;
+	latitude?: number;
 }
 
 export const useAppStore = defineStore('app', {
@@ -16,7 +18,16 @@ export const useAppStore = defineStore('app', {
 	}),
 	actions: {
 		setStore(store: StoreInfo) {
-			this.currentStore = store
+			// 确保赋值的是纯对象
+			this.currentStore = {
+				id: store.id,
+				name: store.name,
+				address: store.address,
+				distance: store.distance,
+				business_hours: store.business_hours,
+				longitude: store.longitude,
+				latitude: store.latitude
+			} as StoreInfo
 		},
 		setOrderMode(mode: 'self-pickup' | 'delivery') {
 			this.orderMode = mode

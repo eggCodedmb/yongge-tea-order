@@ -2,8 +2,11 @@
 	<view class="container">
 		<!-- 顶部门店信息简栏 -->
 		<view class="header">
-			<view class="header-left">
-				<text class="header-store-name">{{appStore.currentStore?.name}}</text>
+			<view class="header-left" @click="goToStoreList">
+				<view class="store-name-row">
+					<text class="header-store-name">{{appStore.currentStore?.name}}</text>
+					<uni-icons type="right" size="14" color="#999"></uni-icons>
+				</view>
 				<text class="header-distance">距离您 {{formatDistance(appStore.currentStore?.distance)}}</text>
 			</view>
 			<view class="header-right">
@@ -628,6 +631,12 @@
 		detailPopup.value?.close()
 	}
 
+	function goToStoreList() {
+		uni.navigateTo({
+			url: '/pages/store/list'
+		})
+	}
+
 	function goToCheckout() {
 		uni.navigateTo({
 			url: '/pages/checkout/checkout'
@@ -655,6 +664,12 @@
 	.header-left {
 		display: flex;
 		flex-direction: column;
+	}
+
+	.store-name-row {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
 	}
 
 	.header-store-name {

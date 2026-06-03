@@ -15,9 +15,32 @@ export interface CartItem {
 	selected: boolean;
 }
 
-export const useCartStore = defineStore('cart', {
-	state: () => ({
-		items: (JSON.parse(uni.getStorageSync('cart_items') as string || '[]') as any[]).map((item : any) : CartItem => {
+// 跨门店商品校验结果
+interface CheckResultItem {
+	original_id: number;
+	original_name: string;
+	matched_id: number | null;
+	matched_name: string | null;
+	available: boolean;
+	stock: number;
+	price: number;
+	reason?: string;
+}
+
+// 购物车转移结果
+export interface TransferResult {
+	transferred: CartItem[];  // 成功转移的商品
+	removed: CartItem[];      // 被移除的商品（不可用）
+	updated: CartItem[];      // ID/价格更新的商品
+}
+
+// 解析购物车存储数据，确保返回纯对象
+function parseCartItems(): CartItem[] {
+	try {
+		const stored = uni.getStorageSync('cart_items') as string || '[]'
+		const parsed = JSON.parse(stored) as any[]
+		// 使用 JSON 序列化/反序列化确保是纯对象
+		return JSON.parse(JSON.stringify(parsed)).map((item: any): CartItem => {
 			// 兼容性处理：将旧的 specIds 转换为 spec_ids
 			if (item['specIds'] != null && item['spec_ids'] == null) {
 				item['spec_ids'] = item['specIds']
@@ -26,9 +49,18 @@ export const useCartStore = defineStore('cart', {
 			if (item['specs'] == null) item['specs'] = [] as string[]
 			if (item['spec_ids'] == null) item['spec_ids'] = [] as number[]
 			if (item['toppings'] == null) item['toppings'] = [] as string[]
-			
+
 			return item as CartItem
-		}),
+		})
+	} catch (e) {
+		console.error('解析购物车数据失败:', e)
+		return []
+	}
+}
+
+export const useCartStore = defineStore('cart', {
+	state: () => ({
+		items: parseCartItems(),
 		loading: false
 	}),
 	getters: {
@@ -205,6 +237,70 @@ export const useCartStore = defineStore('cart', {
 				})
 			} catch (e) {
 				console.error('Sync toggle all failed', e)
+			}
+		},
+
+		/**
+		 * 转移购物车商品到目标门店
+		 * 校验商品在目标门店的可用性，更新或移除不可用商品
+		 */
+		async transferCartToStore(targetStoreId: number): Promise<TransferResult> {
+			if (this.items.length === 0) {
+				return { transferred: [], removed: [], updated: [] }
+			}
+
+			try {
+				const res = await request<any>({
+					url: '/goods/batch_check',
+					method: 'POST',
+					data: {
+						store_id: targetStoreId,
+						items: this.items.map(item => ({
+							goods_id: item.id,
+							name: item.name
+						}))
+					}
+				})
+
+				const checkResult = res.result as CheckResultItem[]
+				const transferred: CartItem[] = []
+				const removed: CartItem[] = []
+				const updated: CartItem[] = []
+
+				for (const item of this.items) {
+					const check = checkResult.find(c => c.original_id === item.id)
+
+					if (check != null && check.available && check.matched_id != null) {
+						// 商品在目标门店可用
+						const updatedItem = { ...item }
+
+						// 如果ID发生变化（不同门店的同名商品），更新ID和价格
+						if (updatedItem.id !== check.matched_id) {
+							updatedItem.id = check.matched_id
+							updatedItem.price = check.price
+							updatedItem.totalPrice = Math.round((check.price * updatedItem.quantity) * 100) / 100
+							updated.push(updatedItem)
+						}
+
+						transferred.push(updatedItem)
+					} else {
+						// 商品不可用，移除
+						removed.push(item)
+					}
+				}
+
+				// 更新购物车
+				this.items = transferred
+				this.saveToStorage()
+
+				return { transferred, removed, updated }
+			} catch (e) {
+				console.error('购物车转移失败:', e)
+				// 失败时清空购物车，避免脏数据
+				const removedItems = [...this.items]
+				this.items = []
+				this.saveToStorage()
+				return { transferred: [], removed: removedItems, updated: [] }
 			}
 		}
 	}

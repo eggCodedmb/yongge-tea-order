@@ -1,91 +1,76 @@
-# 创建订单前库存校验方案
+# 切换门店时购物车商品转移方案
 
 ## 问题分析
 
-### 当前流程问题
+### 当前行为
+- 用户在门店 A 添加商品到购物车（本地 localStorage）
+- 切换到门店 B 时，购物车商品保持不变
+- 问题：门店 B 可能没有该商品，或者该商品已售罄
 
-1. **后端错误信息丢失**：`orderService.createOrder` (line 45) 捕获了 `productInventory` 抛出的 "库存不足" 错误，但重新抛出为通用的 "创建订单失败"，前端无法得知具体原因
-2. **前端忽略错误**：`checkout.uvue` 的 `onMockPaySuccess` 方法在 catch 块中仅打印日志，仍然显示 "支付成功" toast
-3. **无预检查机制**：用户点击支付后才在事务中检查库存，用户体验差
+### 后端已有能力
+- 购物车服务 `oneUserCarts` 已有**跨门店商品名称匹配逻辑**
+- 通过 `goods_name` 匹配不同门店的同名商品
+- 返回 `matching_product` 字段标识目标门店的对应商品
+- 返回 `is_available` 字段标识商品是否可用
 
-## 修改方案
+### 前端现状
+- 购物车数据存储在本地 localStorage（`cart.uts`）
+- 切换门店时仅更新 `appStore.currentStore`，未处理购物车
+- 需要新增：切换门店时的购物车校验和转移逻辑
 
-### 1. 后端：`orderService.js` - 保留原始错误信息
+## 实现方案
 
-**文件**: `E:\Code\store-server-node\src\service\orderService.js`
+### 1. 后端：新增批量商品校验接口
 
-**修改内容**: 在 `createOrder` 方法的 catch 块中，保留原始错误信息而非覆盖
+**文件**: `E:\Code\store-server-node\src\controller\goodsController.js`
 
-```javascript
-// 当前 (line 42-46):
-catch (error) {
-  await transaction.rollback();
-  console.error("创建订单失败:", error);
-  throw new Error("创建订单失败");
-}
-
-// 修改为:
-catch (error) {
-  await transaction.rollback();
-  console.error("创建订单失败:", error);
-  throw error; // 保留原始错误信息（如 "库存不足"、"商品不存在"）
-}
-```
-
-### 2. 后端：新增库存预检查接口
-
-**文件**: `E:\Code\store-server-node\src\controller\orderController.js`
-
-**新增方法**: `checkStock` - 在创建订单前检查库存
+新增 `batchCheckAvailability` 方法，接收商品列表和目标门店 ID，返回每个商品在目标门店的可用状态。
 
 ```javascript
-async checkStock(ctx) {
+async batchCheckAvailability(ctx) {
   try {
-    const { items } = ctx.request.body;
-    if (!items || items.length === 0) {
-      throw new Error("商品列表不能为空");
-    }
+    const { items, store_id } = ctx.request.body;
+    // items: [{ goods_id, name }]
     
     const Goods = require("../model/product/goods");
     const result = [];
     
     for (const item of items) {
-      const goods = await Goods.findByPk(item.goods_id || item.id);
-      if (!goods) {
+      // 按名称在目标门店查找同名商品
+      const match = await Goods.findOne({
+        where: {
+          goods_name: item.name,
+          store_id: store_id,
+          status: 1
+        }
+      });
+      
+      if (match) {
         result.push({
-          goods_id: item.goods_id || item.id,
-          name: item.name || '未知商品',
-          available: false,
-          reason: '商品不存在',
-          stock: 0
-        });
-      } else if (goods.goods_num < item.quantity) {
-        result.push({
-          goods_id: goods.id,
-          name: goods.goods_name,
-          available: false,
-          reason: '库存不足',
-          stock: goods.goods_num
+          original_id: item.goods_id,
+          original_name: item.name,
+          matched_id: match.id,
+          matched_name: match.goods_name,
+          available: match.goods_num > 0,
+          stock: match.goods_num,
+          price: match.goods_price
         });
       } else {
         result.push({
-          goods_id: goods.id,
-          name: goods.goods_name,
-          available: true,
-          stock: goods.goods_num
+          original_id: item.goods_id,
+          original_name: item.name,
+          matched_id: null,
+          available: false,
+          stock: 0,
+          reason: '该门店无此商品'
         });
       }
     }
     
-    const allAvailable = result.every(r => r.available);
-    
     ctx.body = {
       code: 0,
-      message: allAvailable ? "库存充足" : "部分商品库存不足",
-      result: {
-        all_available: allAvailable,
-        items: result
-      }
+      message: "校验成功",
+      result: result
     };
   } catch (error) {
     console.error(error);
@@ -94,117 +79,122 @@ async checkStock(ctx) {
 }
 ```
 
-**文件**: `E:\Code\store-server-node\src\router\orderRouter.js`
+**文件**: `E:\Code\store-server-node\src\router\goodsRouter.js`
 
-**新增路由**: 在路由文件中添加 `check_stock` 路由
-
+新增路由：
 ```javascript
-router.post("/check_stock", auth, checkStock);
+router.post("/batch_check", auth, batchCheckAvailability);
 ```
 
-### 3. 前端：`checkout.uvue` - 添加库存校验逻辑
+### 2. 前端：购物车 Store 新增转移方法
 
-**文件**: `E:\Code\yongge-tea-order\pages\checkout\checkout.uvue`
+**文件**: `E:\Code\yongge-tea-order\store\cart.uts`
 
-**修改内容**:
-
-1. **新增 `checkStock` 方法** - 在支付前调用后端接口检查库存
+新增 `transferCartToStore` 方法：
 
 ```typescript
-async function checkStock(): Promise<boolean> {
-  const selectedItems = cartStore.items.filter(i => i.selected)
-  if (selectedItems.length === 0) return false
+async transferCartToStore(targetStoreId: number): Promise<TransferResult> {
+  if (this.items.length === 0) {
+    return { transferred: [], removed: [], updated: [] }
+  }
   
   try {
     const res = await request<any>({
-      url: '/order/check_stock',
+      url: '/goods/batch_check',
       method: 'POST',
       data: {
-        items: selectedItems.map(item => ({
+        store_id: targetStoreId,
+        items: this.items.map(item => ({
           goods_id: item.id,
-          quantity: item.quantity,
           name: item.name
         }))
       }
     })
     
-    if (!res.result.all_available) {
-      // 找出库存不足的商品
-      const unavailableItems = res.result.items.filter((i: any) => !i.available)
-      const itemNames = unavailableItems.map((i: any) => `${i.name}(库存:${i.stock})`).join('、')
+    const checkResult = res.result as CheckResult[]
+    const transferred: CartItem[] = []
+    const removed: CartItem[] = []
+    const updated: CartItem[] = []
+    
+    for (const item of this.items) {
+      const check = checkResult.find(c => c.original_id === item.id)
       
-      uni.showModal({
-        title: '库存不足',
-        content: `以下商品库存不足：${itemNames}，请修改数量后再试`,
-        showCancel: false,
-        confirmText: '知道了'
-      })
-      return false
-    }
-    
-    return true
-  } catch (e) {
-    console.error('库存检查失败:', e)
-    return true // 检查接口失败时不阻塞，让创建订单接口来判断
-  }
-}
-```
-
-2. **修改 `handlePay` 方法** - 在支付前调用库存检查
-
-```typescript
-async function handlePay() {
-  // ... 现有的前置检查 ...
-  
-  // 新增：库存检查
-  const stockOk = await checkStock()
-  if (!stockOk) return
-  
-  // ... 继续现有的模拟支付流程 ...
-}
-```
-
-3. **修改 `onMockPaySuccess` 方法** - 正确处理库存错误
-
-```typescript
-async function onMockPaySuccess() {
-  uni.showLoading({ title: '支付处理中...' })
-  
-  try {
-    const createRes = await request<any>({
-      url: '/order/create_new',
-      method: 'POST',
-      data: {
-        items: cartStore.items.filter(i => i.selected),
-        order_type: appStore.orderMode === 'self-pickup' ? 1 : 2,
-        address_id: appStore.orderMode === 'delivery' ? addressStore.selectedAddress?.id : 0,
-        remark: remark.value
-      }
-    })
-    
-    // ... 成功逻辑 ...
-    
-  } catch (e: any) {
-    uni.hideLoading()
-    console.error('订单创建失败:', e)
-    
-    // 判断是否是库存不足错误
-    const errorMsg = e.message || '订单创建失败'
-    if (errorMsg.includes('库存不足')) {
-      uni.showModal({
-        title: '库存不足',
-        content: '商品库存不足，请返回购物车修改数量',
-        confirmText: '返回购物车',
-        success: (res) => {
-          if (res.confirm) {
-            uni.navigateBack()
-          }
+      if (check && check.available && check.matched_id) {
+        // 商品在目标门店可用，更新 ID 和价格
+        const updatedItem = { ...item }
+        if (updatedItem.id !== check.matched_id) {
+          updatedItem.id = check.matched_id
+          updatedItem.price = check.price
+          updatedItem.totalPrice = check.price * updatedItem.quantity
+          updated.push(updatedItem)
         }
-      })
-    } else {
-      uni.showToast({ title: errorMsg, icon: 'none' })
+        transferred.push(updatedItem)
+      } else {
+        // 商品不可用，移除
+        removed.push(item)
+      }
     }
+    
+    // 更新购物车
+    this.items = transferred
+    this.saveToStorage()
+    
+    return { transferred, removed, updated }
+  } catch (e) {
+    console.error('购物车转移失败:', e)
+    // 失败时清空购物车，避免脏数据
+    this.items = []
+    this.saveToStorage()
+    return { transferred: [], removed: this.items, updated: [] }
   }
+}
+```
+
+### 3. 前端：门店切换页面增加确认流程
+
+**文件**: `E:\Code\yongge-tea-order\pages\store\list.uvue`
+
+修改 `selectStore` 方法，切换门店时检查购物车：
+
+```typescript
+async function selectStore(store: StoreInfo) {
+  // 如果购物车为空，直接切换
+  if (cartStore.items.length === 0) {
+    appStore.setStore(store)
+    uni.navigateBack()
+    return
+  }
+  
+  // 购物车不为空，提示用户
+  uni.showModal({
+    title: '切换门店',
+    content: `切换到"${store.name}"后，购物车中部分商品可能不可用，是否继续？`,
+    confirmText: '切换',
+    cancelText: '取消',
+    success: async (res) => {
+      if (res.confirm) {
+        uni.showLoading({ title: '正在检查商品...' })
+        
+        const result = await cartStore.transferCartToStore(store.id)
+        
+        uni.hideLoading()
+        
+        // 显示转移结果
+        if (result.removed.length > 0) {
+          const removedNames = result.removed.map(i => i.name).join('、')
+          uni.showModal({
+            title: '商品变动',
+            content: `以下商品在"${store.name}"不可用，已从购物车移除：\n${removedNames}`,
+            showCancel: false,
+            confirmText: '知道了'
+          })
+        }
+        
+        appStore.setStore(store)
+        uni.navigateBack()
+      }
+    }
+  })
 }
 ```
 
@@ -212,14 +202,33 @@ async function onMockPaySuccess() {
 
 | 文件 | 修改类型 | 说明 |
 |------|---------|------|
-| `E:\Code\store-server-node\src\service\orderService.js` | 修改 | 保留原始错误信息 |
-| `E:\Code\store-server-node\src\controller\orderController.js` | 新增 | 添加 `checkStock` 方法 |
-| `E:\Code\store-server-node\src\router\orderRouter.js` | 修改 | 添加 `/check_stock` 路由 |
-| `E:\Code\yongge-tea-order\pages\checkout\checkout.uvue` | 修改 | 添加库存检查和错误处理 |
+| `E:\Code\store-server-node\src\controller\goodsController.js` | 新增 | 添加 `batchCheckAvailability` 方法 |
+| `E:\Code\store-server-node\src\router\goodsRouter.js` | 修改 | 添加 `/goods/batch_check` 路由 |
+| `E:\Code\yongge-tea-order\store\cart.uts` | 修改 | 添加 `transferCartToStore` 方法和类型定义 |
+| `E:\Code\yongge-tea-order\pages\store\list.uvue` | 修改 | 切换门店时调用购物车转移逻辑 |
 
-## 测试要点
+## 业务规则
 
-1. 后端：库存不足时，`/order/create_new` 返回的错误信息应包含 "库存不足"
-2. 后端：`/order/check_stock` 接口正确返回各商品的库存状态
-3. 前端：点击支付时，库存不足应弹窗提示具体哪些商品库存不足
-4. 前端：即使绕过预检查，创建订单失败时也能正确提示库存不足
+1. **商品匹配**：按 `goods_name` 精确匹配目标门店的同名商品
+2. **库存检查**：目标商品 `goods_num > 0` 才算可用
+3. **价格更新**：如果匹配到新商品，使用目标门店的价格
+4. **规格保留**：保留原有规格选择（specs, spec_ids）
+5. **失败处理**：校验接口失败时清空购物车，避免脏数据
+
+## 用户体验流程
+
+```
+用户点击切换门店
+    ↓
+购物车为空？ → 直接切换
+    ↓ 否
+弹窗确认："切换到XX门店后，部分商品可能不可用"
+    ↓ 用户确认
+显示 Loading："正在检查商品..."
+    ↓
+调用 batchCheck 接口
+    ↓
+有不可用商品？ → 显示变动提示："以下商品已移除：XXX"
+    ↓
+切换门店，更新购物车
+```

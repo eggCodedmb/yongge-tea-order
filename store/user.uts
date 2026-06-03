@@ -7,15 +7,34 @@ export interface UserInfo {
 	points: number;
 }
 
+// 解析用户信息，确保返回纯对象
+function parseUserInfo(): UserInfo | null {
+	try {
+		const stored = uni.getStorageSync('user_info')
+		if (stored == null || stored === '') return null
+		// 使用 JSON 序列化/反序列化确保是纯对象
+		return JSON.parse(JSON.stringify(stored)) as UserInfo
+	} catch (e) {
+		console.error('解析用户信息失败:', e)
+		return null
+	}
+}
+
 export const useUserStore = defineStore('user', {
 	state: () => ({
-		userInfo: (uni.getStorageSync('user_info') as UserInfo | null),
+		userInfo: parseUserInfo(),
 		token: uni.getStorageSync('access_token') as string || ''
 	}),
 	actions: {
 		setUserInfo(info: UserInfo) {
-			this.userInfo = info
-			uni.setStorageSync('user_info', info)
+			// 确保赋值的是纯对象
+			this.userInfo = {
+				nickname: info.nickname,
+				avatar: info.avatar,
+				phone: info.phone,
+				points: info.points
+			} as UserInfo
+			uni.setStorageSync('user_info', this.userInfo)
 		},
 		setToken(token: string) {
 			this.token = token

@@ -3,12 +3,50 @@
 		<view class="search-bar">
 			<uni-search-bar radius="100" placeholder="搜索门店" clearButton="auto" cancelButton="none" @confirm="search" @input="onInput" @clear="clearSearch" @cancel="clearSearch" />
 		</view>
-		
-		<scroll-view class="store-list" scroll-y>
-			<view v-for="(item, index) in stores" :key="item.id" class="store-item card" @click="selectStore(item)">
+
+		<!-- 地图区域 -->
+		<view class="map-wrapper">
+			<map
+				id="storeMap"
+				class="store-map"
+				:longitude="mapCenterLng"
+				:latitude="mapCenterLat"
+				:scale="mapScale"
+				:markers="mapMarkers"
+				:include-points="includePoints"
+				:show-location="hasLocation"
+				:enable-zoom="true"
+				:enable-scroll="true"
+				:enable-rotate="false"
+				@markertap="onMarkerTap"
+				@callouttap="onCalloutTap"
+			></map>
+			<!-- 重新定位按钮 -->
+			<view class="relocate-btn" @click="relocate">
+				<text class="relocate-icon">⊕</text>
+				<text class="relocate-text">重新定位</text>
+			</view>
+			<!-- 定位状态提示 -->
+			<view v-if="locationLoading" class="location-loading">
+				<text class="loading-text">定位中...</text>
+			</view>
+		</view>
+
+		<!-- 门店列表 -->
+		<scroll-view class="store-list" scroll-y :scroll-into-view="scrollToView">
+			<view
+				v-for="(item, index) in stores"
+				:key="item.id"
+				:id="'store-' + item.id"
+				:class="['store-item', 'card', selectedStoreId === item.id ? 'card-active' : '']"
+				@click="selectStore(item)"
+			>
 				<view class="store-main">
 					<view class="store-info">
-						<text class="store-name">{{item.name}}</text>
+						<view class="store-name-row">
+							<text class="store-name">{{item.name}}</text>
+							<text v-if="selectedStoreId === item.id" class="current-tag">当前</text>
+						</view>
 						<text class="store-address">{{item.address}}</text>
 						<view class="store-time">
 							<text class="time-label">营业时间：</text>
@@ -21,64 +59,308 @@
 					</view>
 				</view>
 			</view>
+			<view v-if="stores.length === 0 && !locationLoading" class="empty-state">
+				<text class="empty-text">暂无门店数据</text>
+			</view>
 		</scroll-view>
 	</view>
 </template>
 
 <script setup lang="uts">
-	import { ref, onMounted } from 'vue'
+	import { ref, computed, onMounted } from 'vue'
 	import { request } from '@/utils/request.uts'
 	import { formatDistance, formatBusinessHours } from '@/utils/format.uts'
 	import { debounce } from '@/utils/common.uts'
 	import { useAppStore, StoreInfo } from '@/store/app.uts'
+	import { useCartStore } from '@/store/cart.uts'
 
 	const appStore = useAppStore()
+	const cartStore = useCartStore()
 	const stores = ref([] as StoreInfo[])
+
+	// 地图相关状态
+	const userLongitude = ref(0)
+	const userLatitude = ref(0)
+	const mapScale = ref(14)
+	const selectedStoreId = ref(-1)
+	const scrollToView = ref('')
+	const hasLocation = ref(false)
+	const locationLoading = ref(true)
+
+	// 地图中心点：有定位时用用户位置，无定位时用第一个门店或默认值
+	const mapCenterLng = computed(() => {
+		if (hasLocation.value) return userLongitude.value
+		if (stores.value.length > 0 && stores.value[0].longitude != null) return stores.value[0].longitude as number
+		return 116.397428
+	})
+	const mapCenterLat = computed(() => {
+		if (hasLocation.value) return userLatitude.value
+		if (stores.value.length > 0 && stores.value[0].latitude != null) return stores.value[0].latitude as number
+		return 39.90923
+	})
+
+	// 自动缩放包含所有门店点和用户位置
+	const includePoints = computed(() => {
+		const points = [] as UTSJSONObject[]
+		if (hasLocation.value) {
+			points.push({ longitude: userLongitude.value, latitude: userLatitude.value } as UTSJSONObject)
+		}
+		for (let i = 0; i < stores.value.length; i++) {
+			const s = stores.value[i]
+			if (s.longitude != null && s.latitude != null) {
+				points.push({ longitude: s.longitude as number, latitude: s.latitude as number } as UTSJSONObject)
+			}
+		}
+		return points
+	})
+
+	// 构建地图标记
+	const mapMarkers = computed(() => {
+		const markers = [] as UTSJSONObject[]
+		for (let i = 0; i < stores.value.length; i++) {
+			const s = stores.value[i]
+			if (s.longitude == null || s.latitude == null) continue
+
+			const distText = typeof s.distance === 'number' ? formatDistance(s.distance) : (s.distance as string ?? '')
+			const calloutContent = `${s.name}\n${s.address}\n${distText}`
+
+			markers.push({
+				id: s.id,
+				longitude: s.longitude,
+				latitude: s.latitude,
+				title: s.name,
+				iconPath: '/static/images/marker.png',
+				width: 40,
+				height: 54,
+				anchor: { x: 0.5, y: 1 } as UTSJSONObject,
+				callout: {
+					content: calloutContent,
+					color: '#333333',
+					fontSize: 13,
+					borderRadius: 12,
+					borderWidth: 1,
+					borderColor: '#00CC99',
+					bgColor: '#ffffff',
+					padding: 12,
+					display: 'BYCLICK',
+					textAlign: 'center',
+					boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+				} as UTSJSONObject
+			} as UTSJSONObject)
+		}
+		return markers
+	})
 
 	onMounted(() => {
 		getNearbyStores()
 	})
 
+	// Haversine 公式计算两点间直线距离（单位：km）
+	function haversineDistance(lat1 : number, lng1 : number, lat2 : number, lng2 : number) : number {
+		const R = 6371.0
+		const dLat = (lat2 - lat1) * Math.PI / 180
+		const dLng = (lng2 - lng1) * Math.PI / 180
+		const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+			Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+			Math.sin(dLng / 2) * Math.sin(dLng / 2)
+		const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+		return R * c
+	}
+
+	// 为门店列表补充距离信息
+	function applyDistance(list : StoreInfo[]) : StoreInfo[] {
+		if (!hasLocation.value) return list
+		for (let i = 0; i < list.length; i++) {
+			const s = list[i]
+			if (s.longitude != null && s.latitude != null) {
+				s.distance = haversineDistance(
+					userLatitude.value, userLongitude.value,
+					s.latitude as number, s.longitude as number
+				)
+			}
+		}
+		// 按距离排序
+		list.sort((a, b) => {
+			const da = typeof a.distance === 'number' ? a.distance : 9999
+			const db = typeof b.distance === 'number' ? b.distance : 9999
+			return da - db
+		})
+		return list
+	}
+
+	// 多级定位策略：请求授权 → GPS精确定位 → 低精度网络定位 → 仅加载门店列表
 	function getNearbyStores(keyword : string = '') {
-		uni.getLocation({
-			type: 'gcj02',
-			success: (res) => {
-				request<any>({
-					url: '/store/nearby',
-					data: {
-						longitude: res.longitude,
-						latitude: res.latitude,
-						keyword: keyword
-					}
-				}).then(data => {
-					stores.value = data.result.list as StoreInfo[]
-				})
+		locationLoading.value = true
+
+		// 第一步：请求定位授权（首次使用会弹出授权弹窗）
+		uni.authorize({
+			scope: 'scope.userLocation',
+			success: () => {
+				// 已授权，开始定位
+				doGetLocation(keyword)
 			},
 			fail: () => {
-				// 如果定位失败，获取所有门店
-				getAllStores(keyword)
+				// 用户拒绝授权，提示去设置页开启
+				locationLoading.value = false
+				uni.showModal({
+					title: '需要定位权限',
+					content: '为了显示您附近的门店，请在设置中开启定位权限',
+					confirmText: '去设置',
+					cancelText: '取消',
+					success: (res) => {
+						if (res.confirm) {
+							uni.openSetting({
+								success: (settingRes) => {
+									if (settingRes.authSetting['scope.userLocation']) {
+										// 用户在设置页开启了权限，重新定位
+										getNearbyStores(keyword)
+									} else {
+										getAllStores(keyword)
+									}
+								}
+							})
+						} else {
+							getAllStores(keyword)
+						}
+					}
+				})
 			}
 		})
 	}
 
-	function getAllStores(keyword : string = '') {
-                request<any>({
-                        url: '/store/all',
-                        data: { keyword: keyword }
-                }).then(data => {
-                        stores.value = data.result.list as StoreInfo[]
-                })
-        }
-
-	
-
-	function selectStore(store : StoreInfo) {
-		appStore.setStore(store)
-		uni.navigateBack()
+	// 执行定位（已有授权）
+	function doGetLocation(keyword : string) {
+		// 高精度GPS定位
+		uni.getLocation({
+			type: 'gcj02',
+			success: (res) => {
+				onLocationSuccess(res.longitude, res.latitude, keyword)
+			},
+			fail: (err) => {
+				console.log('GPS定位失败，尝试低精度定位', err)
+				// 降级：低精度网络定位
+				uni.getLocation({
+					type: 'gcj02',
+					altitude: false,
+					isHighAccuracy: false,
+					success: (res) => {
+						onLocationSuccess(res.longitude, res.latitude, keyword)
+					},
+					fail: (err2) => {
+						console.log('低精度定位也失败', err2)
+						locationLoading.value = false
+						hasLocation.value = false
+						getAllStores(keyword)
+						uni.showToast({
+							title: '定位失败，请手动选择门店',
+							icon: 'none',
+							duration: 2000
+						})
+					}
+				})
+			}
+		})
 	}
 
-	
-	
+	// 定位成功回调
+	function onLocationSuccess(lng : number, lat : number, keyword : string) {
+		userLongitude.value = lng
+		userLatitude.value = lat
+		hasLocation.value = true
+
+		// 请求附近门店（服务端已有 Haversine 距离计算）
+		request<any>({
+			url: '/store/nearby',
+			data: {
+				longitude: lng,
+				latitude: lat,
+				keyword: keyword
+			}
+		}).then(data => {
+			const list = data.result.list as StoreInfo[]
+			// 用前端 Haversine 校准距离，确保准确性
+			stores.value = applyDistance(list)
+			locationLoading.value = false
+		}).catch(() => {
+			locationLoading.value = false
+		})
+	}
+
+	function getAllStores(keyword : string = '') {
+		request<any>({
+			url: '/store/all',
+			data: { keyword: keyword }
+		}).then(data => {
+			const list = data.result.list as StoreInfo[]
+			// 全量接口无距离字段，有定位时前端补充计算
+			stores.value = applyDistance(list)
+		})
+	}
+
+	// 重新定位
+	function relocate() {
+		selectedStoreId.value = -1
+		stores.value = []
+		getNearbyStores('')
+	}
+
+	// 点击地图标记 → 高亮门店并滚动到对应位置
+	function onMarkerTap(e : any) {
+		const markerId = e.detail.markerId as number
+		selectedStoreId.value = markerId
+		scrollToView.value = 'store-' + markerId
+	}
+
+	// 点击气泡 → 切换门店
+	function onCalloutTap(e : any) {
+		const markerId = e.detail.markerId as number
+		const store = stores.value.find(s => s.id === markerId)
+		if (store != null) {
+			selectStore(store)
+		}
+	}
+
+	function selectStore(store : StoreInfo) {
+		// 如果购物车为空，直接切换
+		if (cartStore.items.length === 0) {
+			appStore.setStore(store)
+			uni.navigateBack()
+			return
+		}
+
+		// 购物车不为空，提示用户
+		uni.showModal({
+			title: '切换门店',
+			content: `切换到"${store.name}"后，购物车中部分商品可能不可用，是否继续？`,
+			confirmText: '切换',
+			cancelText: '取消',
+			success: async (res) => {
+				if (res.confirm) {
+					uni.showLoading({ title: '正在检查商品...' })
+
+					const result = await cartStore.transferCartToStore(store.id)
+
+					uni.hideLoading()
+
+					if (result.removed.length > 0) {
+						const removedNames = result.removed.map(i => i.name).join('、')
+						uni.showModal({
+							title: '商品变动',
+							content: `以下商品在"${store.name}"不可用，已从购物车移除：\n${removedNames}`,
+							showCancel: false,
+							confirmText: '知道了'
+						})
+					} else if (result.updated.length > 0) {
+						uni.showToast({ title: '已切换门店', icon: 'success' })
+					}
+
+					appStore.setStore(store)
+					uni.navigateBack()
+				}
+			}
+		})
+	}
+
 	const debouncedSearch = debounce((keyword : string) => {
 		getNearbyStores(keyword)
 	}, 500)
@@ -109,8 +391,62 @@
 		padding: 10rpx 0;
 	}
 
+	/* 地图容器 */
+	.map-wrapper {
+		width: 100%;
+		height: 500rpx;
+		overflow: hidden;
+		border-radius: 0 0 32rpx 32rpx;
+		position: relative;
+	}
+
+	.store-map {
+		width: 100%;
+		height: 100%;
+	}
+
+	/* 重新定位按钮 */
+	.relocate-btn {
+		position: absolute;
+		right: 24rpx;
+		bottom: 24rpx;
+		background-color: #ffffff;
+		border-radius: 32rpx;
+		padding: 12rpx 24rpx;
+		flex-direction: row;
+		align-items: center;
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+	}
+
+	.relocate-icon {
+		font-size: 28rpx;
+		color: #00cc99;
+		margin-right: 8rpx;
+	}
+
+	.relocate-text {
+		font-size: 22rpx;
+		color: #333333;
+	}
+
+	/* 定位加载状态 */
+	.location-loading {
+		position: absolute;
+		left: 24rpx;
+		top: 24rpx;
+		background-color: rgba(0, 0, 0, 0.6);
+		border-radius: 24rpx;
+		padding: 10rpx 24rpx;
+	}
+
+	.loading-text {
+		font-size: 22rpx;
+		color: #ffffff;
+	}
+
+	/* 门店列表 */
 	.store-list {
-		height: calc(100vh - 120rpx);
+		height: calc(100vh - 620rpx);
 	}
 
 	.card {
@@ -118,6 +454,12 @@
 		margin: 20rpx;
 		padding: 30rpx;
 		border-radius: 16rpx;
+		border-left: 6rpx solid transparent;
+	}
+
+	.card-active {
+		border-left-color: #00cc99;
+		background-color: #f9fffe;
 	}
 
 	.store-main {
@@ -129,11 +471,25 @@
 		flex: 1;
 	}
 
+	.store-name-row {
+		flex-direction: row;
+		align-items: center;
+		margin-bottom: 10rpx;
+	}
+
 	.store-name {
 		font-size: 32rpx;
 		font-weight: bold;
 		color: #333333;
-		margin-bottom: 10rpx;
+	}
+
+	.current-tag {
+		font-size: 20rpx;
+		color: #ffffff;
+		background-color: #00cc99;
+		padding: 4rpx 12rpx;
+		border-radius: 6rpx;
+		margin-left: 12rpx;
 	}
 
 	.store-address {
@@ -174,5 +530,15 @@
 		background-color: #e6f9f5;
 		padding: 4rpx 12rpx;
 		border-radius: 6rpx;
+	}
+
+	.empty-state {
+		padding: 100rpx 0;
+		align-items: center;
+	}
+
+	.empty-text {
+		font-size: 28rpx;
+		color: #999999;
 	}
 </style>
