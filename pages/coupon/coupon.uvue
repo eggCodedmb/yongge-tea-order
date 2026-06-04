@@ -1,0 +1,424 @@
+<template>
+	<view class="container">
+		<!-- Tab 切换 -->
+		<view class="tab-bar">
+			<view
+				v-for="(tab, idx) in tabs"
+				:key="idx"
+				class="tab-item"
+				:class="{'tab-active': currentTab === tab.value}"
+				@click="switchTab(tab.value)"
+			>
+				<text class="tab-text" :class="{'tab-text-active': currentTab === tab.value}">{{tab.label}}</text>
+			</view>
+		</view>
+
+		<!-- 卡券列表 -->
+		<scroll-view scroll-y class="coupon-scroll" @scrolltolower="loadMore">
+			<view v-if="couponList.length > 0" class="coupon-list">
+				<view
+					v-for="(item, idx) in couponList"
+					:key="idx"
+					class="coupon-card"
+				>
+					<!-- 左侧金额 -->
+					<view class="coupon-left" :class="{'coupon-left-used': item.status !== 0, 'coupon-left-expired': item.status === 2}">
+						<text class="coupon-value" :class="{'coupon-value-small': isDiscount(item)}">
+							{{formatCouponValue(item)}}
+						</text>
+						<text class="coupon-condition" v-if="item.template?.min_spend > 0">
+							满{{item.template.min_spend}}可用
+						</text>
+						<text class="coupon-condition" v-else>无门槛</text>
+					</view>
+
+					<!-- 分割线 -->
+					<view class="coupon-divider">
+						<view class="divider-circle top"></view>
+						<view class="divider-line"></view>
+						<view class="divider-circle bottom"></view>
+					</view>
+
+					<!-- 右侧信息 -->
+					<view class="coupon-right">
+						<view class="coupon-info">
+							<text class="coupon-name">{{item.template?.name || '优惠券'}}</text>
+							<text class="coupon-desc">{{formatCouponDesc(item)}}</text>
+							<text class="coupon-time">有效期至 {{formatTime(item.template?.end_time)}}</text>
+						</view>
+						<view class="coupon-status-badge" :class="getStatusClass(item.status)">
+							<text class="status-badge-text">{{getStatusText(item.status)}}</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
+			<!-- 空状态 -->
+			<view v-else-if="!loading" class="empty-state">
+				<text class="empty-icon">🎟️</text>
+				<text class="empty-text">暂无{{getTabLabel(currentTab)}}卡券</text>
+			</view>
+
+			<!-- 加载状态 -->
+			<view v-if="loading" class="loading-state">
+				<text class="loading-text">加载中...</text>
+			</view>
+
+			<!-- 没有更多 -->
+			<view v-if="!hasMore && couponList.length > 0" class="no-more">
+				<text class="no-more-text">没有更多了</text>
+			</view>
+		</scroll-view>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, onMounted } from 'vue'
+	import { request } from '@/utils/request.uts'
+
+	const tabs = [
+		{ label: '未使用', value: 0 },
+		{ label: '已使用', value: 1 },
+		{ label: '已过期', value: 2 }
+	]
+
+	const currentTab = ref(0)
+	const couponList = ref([] as any[])
+	const loading = ref(false)
+	const hasMore = ref(true)
+	const pageNum = ref(1)
+	const pageSize = 20
+
+	function switchTab(tab: number) {
+		if (currentTab.value === tab) return
+		currentTab.value = tab
+		couponList.value = []
+		pageNum.value = 1
+		hasMore.value = true
+		fetchCoupons()
+	}
+
+	async function fetchCoupons() {
+		if (loading.value) return
+		loading.value = true
+
+		try {
+			const res = await request<any>({
+				url: '/coupon/mine',
+				method: 'GET',
+				data: {
+					status: currentTab.value,
+					pageNum: pageNum.value,
+					pageSize: pageSize
+				}
+			})
+			const result = res.result as UTSJSONObject
+			const list = (result['list'] || []) as any[]
+			const total = result['total'] as number
+
+			if (pageNum.value === 1) {
+				couponList.value = list
+			} else {
+				couponList.value = [...couponList.value, ...list]
+			}
+
+			hasMore.value = couponList.value.length < total
+		} catch (e) {
+			console.error('获取卡券失败', e)
+		} finally {
+			loading.value = false
+		}
+	}
+
+	function loadMore() {
+		if (!hasMore.value || loading.value) return
+		pageNum.value++
+		fetchCoupons()
+	}
+
+	// 格式化优惠券金额
+	function formatCouponValue(item: any): string {
+		const template = (item as UTSJSONObject)['template'] as UTSJSONObject | null
+		if (!template) return '-'
+		const type = template['type'] as number
+		const value = template['value'] as string
+		if (type === 2) {
+			return `${(parseFloat(value) * 10).toFixed(0)}折`
+		}
+		return `¥${parseFloat(value).toFixed(0)}`
+	}
+
+	function isDiscount(item: any): boolean {
+		const template = (item as UTSJSONObject)['template'] as UTSJSONObject | null
+		if (!template) return false
+		return (template['type'] as number) === 2
+	}
+
+	// 格式化优惠券描述
+	function formatCouponDesc(item: any): string {
+		const template = (item as UTSJSONObject)['template'] as UTSJSONObject | null
+		if (!template) return ''
+		const type = template['type'] as number
+		if (type === 1) return '满减券'
+		if (type === 2) return '折扣券'
+		if (type === 3) return '固定金额券'
+		return ''
+	}
+
+	// 格式化时间
+	function formatTime(time: string | null): string {
+		if (!time) return '-'
+		return (time as string).substring(0, 10)
+	}
+
+	// 状态样式
+	function getStatusClass(status: number): string {
+		if (status === 0) return 'status-unused'
+		if (status === 1) return 'status-used'
+		return 'status-expired'
+	}
+
+	function getStatusText(status: number): string {
+		if (status === 0) return '未使用'
+		if (status === 1) return '已使用'
+		return '已过期'
+	}
+
+	function getTabLabel(tab: number): string {
+		const found = tabs.find(t => t.value === tab)
+		return found ? found.label : ''
+	}
+
+	onMounted(() => {
+		fetchCoupons()
+	})
+</script>
+
+<style>
+	.container {
+		background-color: #f5f5f5;
+		min-height: 100vh;
+		flex-direction: column;
+	}
+
+	/* ---- Tab 栏 ---- */
+	.tab-bar {
+		flex-direction: row;
+		background-color: #ffffff;
+		padding: 20rpx 30rpx;
+		justify-content: space-around;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0f0f0;
+		border-bottom-style: solid;
+	}
+
+	.tab-item {
+		padding: 12rpx 32rpx;
+		border-radius: 30rpx;
+		background-color: #f5f5f5;
+	}
+
+	.tab-active {
+		background-color: #00CC99;
+	}
+
+	.tab-text {
+		font-size: 26rpx;
+		color: #666666;
+	}
+
+	.tab-text-active {
+		color: #ffffff;
+		font-weight: 600;
+	}
+
+	/* ---- 滚动区域 ---- */
+	.coupon-scroll {
+		flex: 1;
+		height: calc(100vh - 100rpx);
+	}
+
+	.coupon-list {
+		padding: 20rpx;
+	}
+
+	/* ---- 卡券卡片 ---- */
+	.coupon-card {
+		flex-direction: row;
+		background-color: #ffffff;
+		border-radius: 16rpx;
+		margin-bottom: 20rpx;
+		overflow: hidden;
+	}
+
+	.coupon-left {
+		width: 220rpx;
+		padding: 30rpx 20rpx;
+		justify-content: center;
+		align-items: center;
+		background: linear-gradient(135deg, #e6f9f5 0%, #d4f5ed 100%);
+	}
+
+	.coupon-left-used {
+		background: linear-gradient(135deg, #f0f0f0 0%, #e8e8e8 100%);
+	}
+
+	.coupon-left-expired {
+		background: linear-gradient(135deg, #f5f5f5 0%, #eeeeee 100%);
+	}
+
+	.coupon-value {
+		font-size: 52rpx;
+		font-weight: bold;
+		color: #FF4D4F;
+	}
+
+	.coupon-value-small {
+		font-size: 40rpx;
+	}
+
+	.coupon-left-used .coupon-value,
+	.coupon-left-expired .coupon-value {
+		color: #999999;
+	}
+
+	.coupon-condition {
+		font-size: 22rpx;
+		color: #999999;
+		margin-top: 6rpx;
+	}
+
+	/* ---- 分割线 ---- */
+	.coupon-divider {
+		width: 2rpx;
+		position: relative;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.divider-circle {
+		width: 24rpx;
+		height: 12rpx;
+		background-color: #f5f5f5;
+	}
+
+	.divider-circle.top {
+		border-bottom-left-radius: 12rpx;
+		border-bottom-right-radius: 12rpx;
+	}
+
+	.divider-circle.bottom {
+		border-top-left-radius: 12rpx;
+		border-top-right-radius: 12rpx;
+	}
+
+	.divider-line {
+		flex: 1;
+		width: 2rpx;
+		background-color: #f0f0f0;
+	}
+
+	/* ---- 右侧信息 ---- */
+	.coupon-right {
+		flex: 1;
+		padding: 24rpx;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.coupon-info {
+		flex: 1;
+	}
+
+	.coupon-name {
+		font-size: 28rpx;
+		font-weight: 600;
+		color: #333333;
+		margin-bottom: 8rpx;
+	}
+
+	.coupon-desc {
+		font-size: 22rpx;
+		color: #666666;
+		margin-bottom: 6rpx;
+	}
+
+	.coupon-time {
+		font-size: 20rpx;
+		color: #999999;
+	}
+
+	/* ---- 状态标签 ---- */
+	.coupon-status-badge {
+		padding: 6rpx 16rpx;
+		border-radius: 16rpx;
+		margin-left: 12rpx;
+	}
+
+	.status-badge-text {
+		font-size: 20rpx;
+	}
+
+	.status-unused {
+		background-color: #e6f9f5;
+	}
+
+	.status-unused .status-badge-text {
+		color: #00CC99;
+	}
+
+	.status-used {
+		background-color: #f0f0f0;
+	}
+
+	.status-used .status-badge-text {
+		color: #999999;
+	}
+
+	.status-expired {
+		background-color: #fff0f0;
+	}
+
+	.status-expired .status-badge-text {
+		color: #FF4D4F;
+	}
+
+	/* ---- 空状态 ---- */
+	.empty-state {
+		align-items: center;
+		justify-content: center;
+		padding: 120rpx 0;
+	}
+
+	.empty-icon {
+		font-size: 80rpx;
+		margin-bottom: 20rpx;
+	}
+
+	.empty-text {
+		font-size: 28rpx;
+		color: #999999;
+	}
+
+	/* ---- 加载状态 ---- */
+	.loading-state {
+		align-items: center;
+		padding: 30rpx;
+	}
+
+	.loading-text {
+		font-size: 24rpx;
+		color: #999999;
+	}
+
+	.no-more {
+		align-items: center;
+		padding: 30rpx;
+	}
+
+	.no-more-text {
+		font-size: 24rpx;
+		color: #cccccc;
+	}
+</style>

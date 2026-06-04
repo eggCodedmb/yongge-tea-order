@@ -33,8 +33,8 @@
 								<text class="asset-num">{{userStore.userInfo?.points || 0}}</text>
 								<text class="asset-name">积分</text>
 							</view>
-							<view class="asset-col">
-								<text class="asset-num">0</text>
+							<view class="asset-col" @click.stop="goToCoupon">
+								<text class="asset-num">{{couponCount}}</text>
 								<text class="asset-name">礼券</text>
 							</view>
 						</view>
@@ -117,6 +117,7 @@
 </template>
 
 <script setup lang="uts">
+	import { ref } from 'vue'
 	import { useUserStore } from '@/store/user.uts'
 	import { useAppStore } from '@/store/app.uts'
 	import { useCartStore } from '@/store/cart.uts'
@@ -125,10 +126,32 @@
 
 	const userStore = useUserStore()
 	const cartStore = useCartStore()
+	const couponCount = ref(0)
 
 	onShow(() => {
 		checkSession()
+		if (userStore.token != '') {
+			fetchCouponCount()
+		}
 	})
+
+	async function fetchCouponCount() {
+		try {
+			const res = await request<any>({
+				url: '/coupon/mine',
+				method: 'GET',
+				data: {
+					status: 0,
+					pageNum: 1,
+					pageSize: 1
+				}
+			})
+			const result = res.result as UTSJSONObject
+			couponCount.value = (result['total'] as number) || 0
+		} catch (e) {
+			console.error('获取卡券数量失败', e)
+		}
+	}
 
 	async function checkSession() {
 		if (userStore.token == '') return
@@ -230,6 +253,12 @@
 	function goToAddress() {
 		uni.navigateTo({
 			url: '/pages/profile/address'
+		})
+	}
+
+	function goToCoupon() {
+		uni.navigateTo({
+			url: '/pages/coupon/coupon'
 		})
 	}
 

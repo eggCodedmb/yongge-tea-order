@@ -50,6 +50,26 @@
 				</view>
 			</view>
 
+			<!-- 优惠券选择 -->
+			<view class="section card coupon-section" @click="openCouponPopup">
+				<view class="coupon-row">
+					<view class="coupon-left">
+						<text class="coupon-icon">🏷️</text>
+						<text class="coupon-label">优惠券</text>
+					</view>
+					<view class="coupon-right" v-if="couponList.length > 0">
+						<text class="coupon-selected-text" v-if="selectedCouponId > 0">
+							已减 ￥{{discountAmount}}
+						</text>
+						<text class="coupon-count-text" v-else>
+							{{availableCount}}张可用
+						</text>
+						<view class="css-arrow-right-large"></view>
+					</view>
+					<text class="coupon-empty-text" v-else>暂无可用优惠券</text>
+				</view>
+			</view>
+
 			<!-- 备注 -->
 			<view class="section card">
 				<view class="remark-row">
@@ -65,13 +85,75 @@
 		<!-- 底部结算栏 -->
 		<view class="footer-bar">
 			<view class="footer-left">
-				<text class="footer-total-label">待支付</text>
-				<text class="footer-total-price">￥{{cartStore.totalAmount}}</text>
+				<view class="footer-price-row">
+					<text class="footer-total-label">合计</text>
+					<text class="footer-original-price" v-if="discountAmount > 0">￥{{cartStore.totalAmount}}</text>
+					<text class="footer-discount" v-if="discountAmount > 0">-￥{{discountAmount}}</text>
+				</view>
+				<view class="footer-pay-row">
+					<text class="footer-pay-label">待支付</text>
+					<text class="footer-total-price">￥{{payAmount}}</text>
+				</view>
 			</view>
 			<view class="pay-btn" @click="handlePay">
 				<text class="pay-btn-text">立即支付</text>
 			</view>
 		</view>
+
+		<!-- 优惠券选择弹窗 -->
+		<uni-popup ref="couponPopup" type="bottom" background-color="#ffffff" :mask-click="true">
+			<view class="coupon-popup">
+				<view class="popup-header">
+					<text class="popup-title">选择优惠券</text>
+					<text class="popup-close" @click="closeCouponPopup">✕</text>
+				</view>
+				<scroll-view scroll-y class="coupon-scroll">
+					<!-- 不使用优惠券 -->
+					<view class="coupon-item" :class="{'coupon-item-active': selectedCouponId === 0}" @click="selectCoupon(0)">
+						<view class="coupon-item-left no-coupon-left">
+							<text class="no-coupon-text">不使用优惠券</text>
+						</view>
+						<view class="coupon-check" :class="{'check-active': selectedCouponId === 0}">
+							<text v-if="selectedCouponId === 0" class="check-icon">✓</text>
+						</view>
+					</view>
+					<!-- 优惠券列表 -->
+					<view
+						v-for="(item, idx) in couponList"
+						:key="idx"
+						class="coupon-item"
+						:class="{
+							'coupon-item-active': selectedCouponId === item.id,
+							'coupon-item-disabled': !item._available
+						}"
+						@click="item._available ? selectCoupon(item.id) : null"
+					>
+						<view class="coupon-item-left" :class="{'coupon-left-disabled': !item._available}">
+							<text class="coupon-item-value" :class="{'value-small': item.template?.type === 2}">
+								{{formatCouponValue(item)}}
+							</text>
+							<text class="coupon-item-condition" v-if="item.template?.min_spend > 0">
+								满{{item.template.min_spend}}可用
+							</text>
+							<text class="coupon-item-condition" v-else>无门槛</text>
+						</view>
+						<view class="coupon-item-divider">
+							<view class="divider-dot top"></view>
+							<view class="divider-line"></view>
+							<view class="divider-dot bottom"></view>
+						</view>
+						<view class="coupon-item-right">
+							<text class="coupon-item-name">{{item.template?.name || '优惠券'}}</text>
+							<text class="coupon-item-desc">{{formatCouponType(item)}}</text>
+							<text class="coupon-item-reason" v-if="!item._available">{{item._reason}}</text>
+						</view>
+						<view class="coupon-check" :class="{'check-active': selectedCouponId === item.id}">
+							<text v-if="selectedCouponId === item.id" class="check-icon">✓</text>
+						</view>
+					</view>
+				</scroll-view>
+			</view>
+		</uni-popup>
 
 		<!-- uni-pay-x 支付组件 -->
 		<uni-pay
@@ -101,6 +183,23 @@
 	const uniPayRef = ref(null)
 	const currentOrderId = ref(0)
 
+	// 优惠券相关状态
+	const couponList = ref([] as any[])
+	const selectedCouponId = ref(0)
+	const discountAmount = ref(0)
+	const couponPopup = ref(null)
+
+	// 支付金额 = 总金额 - 优惠
+	const payAmount = computed(() => {
+		const amount = cartStore.totalAmount - discountAmount.value
+		return amount > 0 ? amount.toFixed(2) : '0.00'
+	})
+
+	// 可用优惠券数量
+	const availableCount = computed(() => {
+		return couponList.value.filter((c: any) => (c as UTSJSONObject)['_available']).length
+	})
+
 	const selectedItems = computed(() : CartItem[] => {
 		return cartStore.items.filter(i => i.selected)
 	})
@@ -112,7 +211,170 @@
 		if (appStore.orderMode === 'delivery') {
 			addressStore.fetchAddresses()
 		}
+		fetchCoupons()
 	})
+
+	// ========== 优惠券逻辑 ==========
+
+	// 获取用户未使用优惠券
+	async function fetchCoupons() {
+		try {
+			const res = await request<any>({
+				url: '/coupon/mine',
+				method: 'GET',
+				data: { status: 0, pageNum: 1, pageSize: 100 }
+			})
+			const result = res.result as UTSJSONObject
+			const list = (result['list'] || []) as any[]
+
+			// 客户端预筛选 + 标记可用性
+			const totalAmount = cartStore.totalAmount
+			const storeId = appStore.currentStore?.id || 0
+			const now = new Date()
+
+			for (let i = 0; i < list.length; i++) {
+				const item = list[i] as UTSJSONObject
+				const template = item['template'] as UTSJSONObject
+				const obj = item as any
+
+				if (!template) {
+					obj['_available'] = false
+					obj['_reason'] = '优惠券信息异常'
+					continue
+				}
+
+				const endTime = new Date(template['end_time'] as string)
+				const templateStoreId = template['store_id'] as number | null
+				const minSpend = parseFloat(template['min_spend'] as string || '0')
+
+				if (endTime < now) {
+					obj['_available'] = false
+					obj['_reason'] = '已过期'
+				} else if (templateStoreId != null && templateStoreId !== 0 && templateStoreId !== storeId) {
+					obj['_available'] = false
+					obj['_reason'] = '不适用当前门店'
+				} else if (minSpend > 0 && totalAmount < minSpend) {
+					obj['_available'] = false
+					obj['_reason'] = `需满${minSpend}元可用`
+				} else {
+					obj['_available'] = true
+					obj['_reason'] = ''
+				}
+			}
+
+			couponList.value = list
+
+			// 自动选中优惠最大的可用券
+			autoSelectBestCoupon()
+		} catch (e) {
+			console.error('获取优惠券失败', e)
+		}
+	}
+
+	// 自动选中优惠金额最大的优惠券
+	function autoSelectBestCoupon() {
+		let bestId = 0
+		let bestDiscount = 0
+		const totalAmount = cartStore.totalAmount
+
+		for (let i = 0; i < couponList.value.length; i++) {
+			const item = couponList.value[i] as UTSJSONObject
+			if (!(item['_available'] as boolean)) continue
+
+			const discount = calcCouponDiscount(item, totalAmount)
+			if (discount > bestDiscount) {
+				bestDiscount = discount
+				bestId = item['id'] as number
+			}
+		}
+
+		if (bestId > 0) {
+			selectedCouponId.value = bestId
+			discountAmount.value = bestDiscount
+		}
+	}
+
+	// 客户端计算优惠券折扣金额
+	function calcCouponDiscount(item: UTSJSONObject, totalAmount: number): number {
+		const template = item['template'] as UTSJSONObject
+		if (!template) return 0
+
+		const type = template['type'] as number
+		const value = parseFloat(template['value'] as string)
+		let discount = 0
+
+		if (type === 1) {
+			// 满减券
+			discount = value
+		} else if (type === 2) {
+			// 折扣券
+			discount = totalAmount * (1 - value)
+			const maxDiscount = template['max_discount'] as string | null
+			if (maxDiscount && parseFloat(maxDiscount) > 0) {
+				discount = Math.min(discount, parseFloat(maxDiscount))
+			}
+		} else if (type === 3) {
+			// 固定金额券
+			discount = value
+		}
+
+		// 优惠不超过总价
+		discount = Math.min(discount, totalAmount)
+		return Math.round(discount * 100) / 100
+	}
+
+	// 选择优惠券
+	function selectCoupon(couponId: number) {
+		selectedCouponId.value = couponId
+		if (couponId === 0) {
+			discountAmount.value = 0
+		} else {
+			for (let i = 0; i < couponList.value.length; i++) {
+				const item = couponList.value[i] as UTSJSONObject
+				if ((item['id'] as number) === couponId) {
+					discountAmount.value = calcCouponDiscount(item, cartStore.totalAmount)
+					break
+				}
+			}
+		}
+		closeCouponPopup()
+	}
+
+	// 打开优惠券选择弹窗
+	function openCouponPopup() {
+		if (couponList.value.length === 0) return
+		if (couponPopup.value) {
+			(couponPopup.value as any).open()
+		}
+	}
+
+	// 关闭优惠券选择弹窗
+	function closeCouponPopup() {
+		if (couponPopup.value) {
+			(couponPopup.value as any).close()
+		}
+	}
+
+	// 格式化优惠券金额
+	function formatCouponValue(item: any): string {
+		const template = (item as UTSJSONObject)['template'] as UTSJSONObject
+		if (!template) return '-'
+		const type = template['type'] as number
+		const value = template['value'] as string
+		if (type === 2) return `${(parseFloat(value) * 10).toFixed(0)}折`
+		return `¥${parseFloat(value).toFixed(0)}`
+	}
+
+	// 格式化优惠券类型
+	function formatCouponType(item: any): string {
+		const template = (item as UTSJSONObject)['template'] as UTSJSONObject
+		if (!template) return ''
+		const type = template['type'] as number
+		if (type === 1) return '满减券'
+		if (type === 2) return '折扣券'
+		if (type === 3) return '固定金额券'
+		return ''
+	}
 
 	function goToSelectAddress() {
 		uni.navigateTo({
@@ -193,7 +455,7 @@
 			
 			uni.showModal({
 				title: '模拟支付确认',
-				content: `由于当前环境未配置支付商户，系统将进行模拟支付。\n待支付金额：￥${cartStore.totalAmount}`,
+				content: `由于当前环境未配置支付商户，系统将进行模拟支付。\n待支付金额：￥${payAmount.value}`,
 				confirmText: '确认支付',
 				cancelText: '取消',
 				success: (modalRes) => {
@@ -221,7 +483,8 @@
 					items: cartStore.items.filter(i => i.selected),
 					order_type: appStore.orderMode === 'self-pickup' ? 1 : 2,
 					address_id: appStore.orderMode === 'delivery' ? addressStore.selectedAddress?.id : 0,
-					remark: remark.value
+					remark: remark.value,
+					coupon_id: selectedCouponId.value > 0 ? selectedCouponId.value : undefined
 				}
 			})
 			currentOrderId.value = createRes.result.id
@@ -578,5 +841,267 @@
 		color: #fff;
 		font-size: 32rpx;
 		font-weight: bold;
+	}
+
+	/* ========== 优惠券选择区 ========== */
+	.coupon-section {
+		padding: 24rpx 30rpx;
+	}
+
+	.coupon-row {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.coupon-left {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.coupon-icon {
+		font-size: 36rpx;
+		margin-right: 12rpx;
+	}
+
+	.coupon-label {
+		font-size: 28rpx;
+		font-weight: 600;
+		color: #333;
+	}
+
+	.coupon-right {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.coupon-selected-text {
+		font-size: 26rpx;
+		color: #ff4d4f;
+		font-weight: 600;
+		margin-right: 10rpx;
+	}
+
+	.coupon-count-text {
+		font-size: 26rpx;
+		color: #00cc99;
+		margin-right: 10rpx;
+	}
+
+	.coupon-empty-text {
+		font-size: 24rpx;
+		color: #ccc;
+	}
+
+	/* ========== 优惠券弹窗 ========== */
+	.coupon-popup {
+		background-color: #ffffff;
+		border-radius: 24rpx 24rpx 0 0;
+		max-height: 70vh;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.popup-header {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding: 30rpx;
+		border-bottom: 1rpx solid #f0f0f0;
+	}
+
+	.popup-title {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #333;
+	}
+
+	.popup-close {
+		font-size: 36rpx;
+		color: #999;
+		padding: 10rpx;
+	}
+
+	.coupon-scroll {
+		max-height: 60vh;
+		padding: 20rpx;
+	}
+
+	.coupon-item {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+		background: #fff;
+		border: 2rpx solid #eee;
+		border-radius: 16rpx;
+		margin-bottom: 16rpx;
+		overflow: hidden;
+	}
+
+	.coupon-item-active {
+		border-color: #00cc99;
+		background-color: #f9fffe;
+	}
+
+	.coupon-item-disabled {
+		opacity: 0.5;
+	}
+
+	.coupon-item-left {
+		width: 200rpx;
+		padding: 24rpx 16rpx;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		background: linear-gradient(135deg, #e6f9f5 0%, #d4f5ed 100%);
+	}
+
+	.coupon-left-disabled {
+		background: linear-gradient(135deg, #f5f5f5 0%, #eeeeee 100%);
+	}
+
+	.no-coupon-left {
+		background: transparent;
+		width: 200rpx;
+	}
+
+	.no-coupon-text {
+		font-size: 26rpx;
+		color: #666;
+	}
+
+	.coupon-item-value {
+		font-size: 44rpx;
+		font-weight: bold;
+		color: #ff4d4f;
+	}
+
+	.value-small {
+		font-size: 36rpx;
+	}
+
+	.coupon-left-disabled .coupon-item-value {
+		color: #999;
+	}
+
+	.coupon-item-condition {
+		font-size: 20rpx;
+		color: #999;
+		margin-top: 4rpx;
+	}
+
+	.coupon-item-divider {
+		width: 2rpx;
+		height: 100%;
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.divider-dot {
+		width: 20rpx;
+		height: 10rpx;
+		background-color: #f5f5f5;
+	}
+
+	.divider-dot.top {
+		border-bottom-left-radius: 10rpx;
+		border-bottom-right-radius: 10rpx;
+	}
+
+	.divider-dot.bottom {
+		border-top-left-radius: 10rpx;
+		border-top-right-radius: 10rpx;
+	}
+
+	.divider-line {
+		flex: 1;
+		width: 2rpx;
+		background-color: #f0f0f0;
+	}
+
+	.coupon-item-right {
+		flex: 1;
+		padding: 20rpx;
+	}
+
+	.coupon-item-name {
+		font-size: 26rpx;
+		font-weight: 600;
+		color: #333;
+		margin-bottom: 6rpx;
+	}
+
+	.coupon-item-desc {
+		font-size: 22rpx;
+		color: #999;
+	}
+
+	.coupon-item-reason {
+		font-size: 20rpx;
+		color: #ff4d4f;
+		margin-top: 4rpx;
+	}
+
+	.coupon-check {
+		width: 44rpx;
+		height: 44rpx;
+		border-radius: 22rpx;
+		border: 2rpx solid #ddd;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		margin-right: 20rpx;
+	}
+
+	.check-active {
+		background-color: #00cc99;
+		border-color: #00cc99;
+	}
+
+	.check-icon {
+		color: #fff;
+		font-size: 24rpx;
+		font-weight: bold;
+	}
+
+	/* ========== 底部结算栏改造 ========== */
+	.footer-price-row {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+		margin-bottom: 4rpx;
+	}
+
+	.footer-original-price {
+		font-size: 24rpx;
+		color: #999;
+		text-decoration: line-through;
+		margin-left: 8rpx;
+	}
+
+	.footer-discount {
+		font-size: 24rpx;
+		color: #ff4d4f;
+		margin-left: 8rpx;
+	}
+
+	.footer-pay-row {
+		display: flex;
+		flex-direction: row;
+		align-items: baseline;
+	}
+
+	.footer-pay-label {
+		font-size: 24rpx;
+		color: #666;
+		margin-right: 10rpx;
 	}
 </style>

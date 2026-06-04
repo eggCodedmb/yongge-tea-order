@@ -67,6 +67,20 @@
 			"style": {
 				"navigationBarTitleText": "个人信息"
 			}
+		},
+		{
+			"path": "pages/checkin/checkin",
+			"style": {
+				"navigationBarTitleText": "每日签到",
+				"navigationBarBackgroundColor": "#00CC99",
+				"navigationBarTextStyle": "white"
+			}
+		},
+		{
+			"path": "pages/coupon/coupon",
+			"style": {
+				"navigationBarTitleText": "我的卡券"
+			}
 		}
 	,{
     "path": "uni_modules/uni-pay-x/pages/success/success",

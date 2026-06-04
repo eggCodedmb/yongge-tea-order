@@ -1,0 +1,533 @@
+<template>
+	<view class="container">
+		<!-- 顶部横幅 -->
+		<view class="header-banner">
+			<view class="streak-info">
+				<text class="streak-number">{{status.streak}}</text>
+				<text class="streak-label">连续签到天数</text>
+			</view>
+			<view class="today-info" v-if="status.todayCheckedIn">
+				<text class="today-text">今日已签到</text>
+			</view>
+		</view>
+
+		<!-- 签到进度卡片 -->
+		<view class="progress-card card">
+			<view class="progress-header">
+				<text class="progress-title">签到进度</text>
+				<text class="progress-tip">连续签到7天可获得全部奖励</text>
+			</view>
+			<view class="dots-row">
+				<view
+					v-for="(day, idx) in displayDays"
+					:key="idx"
+					class="dot-item"
+				>
+					<view
+						class="dot-circle"
+						:class="{
+							'dot-checked': day.checked,
+							'dot-today': day.isToday && !day.checked,
+							'dot-future': !day.checked && !day.isToday
+						}"
+					>
+						<text class="dot-text">{{day.checked ? '✓' : day.dayNum}}</text>
+					</view>
+					<text class="dot-label">{{day.dayLabel}}</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 奖励详情列表 -->
+		<view class="reward-list card">
+			<text class="reward-list-title">签到奖励</text>
+			<view
+				v-for="(reward, idx) in status.rewards"
+				:key="idx"
+				class="reward-item"
+			>
+				<view class="reward-day-tag" :style="{backgroundColor: getDayColor(reward.day_number)}">
+					<text class="reward-day-num">{{reward.day_number}}</text>
+				</view>
+				<view class="reward-info">
+					<text class="reward-coupon-name">{{reward.template?.name || '暂无奖励'}}</text>
+					<text class="reward-coupon-desc" v-if="reward.template">{{formatCouponDesc(reward.template)}}</text>
+				</view>
+				<view class="reward-status">
+					<text v-if="isDayChecked(reward.day_number)" class="reward-status-text checked">已领取</text>
+					<text v-else class="reward-status-text">待签到</text>
+				</view>
+			</view>
+		</view>
+
+		<!-- 签到按钮 -->
+		<view class="btn-area">
+			<view
+				class="checkin-btn"
+				:class="{'btn-disabled': status.todayCheckedIn}"
+				@click="handleCheckin"
+			>
+				<text class="checkin-btn-text">{{status.todayCheckedIn ? '今日已签到' : '立即签到'}}</text>
+			</view>
+		</view>
+
+		<!-- 我的卡券入口 -->
+		<view class="coupon-link" @click="goToCoupon">
+			<text class="coupon-link-text">查看我的卡券 ></text>
+		</view>
+
+		<!-- 签到成功弹窗 -->
+		<uni-popup ref="rewardPopup" type="center" :is-mask-click="false">
+			<view class="reward-popup">
+				<view class="popup-icon">🎉</view>
+				<text class="popup-title">签到成功</text>
+				<text class="popup-streak">已连续签到 {{status.streak}} 天</text>
+				<view v-if="lastReward" class="popup-coupon">
+					<text class="popup-coupon-label">恭喜获得</text>
+					<text class="popup-coupon-value">{{lastReward.value}}</text>
+					<text class="popup-coupon-name">{{lastReward.name}}</text>
+				</view>
+				<view class="popup-btn" @click="closeRewardPopup">
+					<text class="popup-btn-text">开心收下</text>
+				</view>
+			</view>
+		</uni-popup>
+	</view>
+</template>
+
+<script setup lang="uts">
+	import { ref, computed, onMounted } from 'vue'
+	import { request } from '@/utils/request.uts'
+
+	const status = ref({
+		streak: 0,
+		todayCheckedIn: false,
+		nextDayNumber: 1,
+		currentDayNumber: 0,
+		rewards: [] as any[],
+		history: [] as any[]
+	})
+
+	const rewardPopup = ref(null)
+	const lastReward = ref(null as UTSJSONObject | null)
+
+	// 构建7天显示数据
+	const displayDays = computed(() => {
+		const days: UTSJSONObject[] = []
+		const history = status.value.history || [] as any[]
+		const checkedDays = new Set<number>()
+
+		// 从历史记录中提取已签到的 day_number
+		for (let i = 0; i < history.length; i++) {
+			const h = history[i] as UTSJSONObject
+			const dn = h['day_number'] as number
+			checkedDays.add(dn)
+		}
+
+		const dayLabels = ['第1天', '第2天', '第3天', '第4天', '第5天', '第6天', '第7天']
+		const nextDay = status.value.nextDayNumber
+
+		for (let i = 1; i <= 7; i++) {
+			days.push({
+				dayNum: i,
+				dayLabel: dayLabels[i - 1],
+				checked: checkedDays.has(i),
+				isToday: !status.value.todayCheckedIn && i === nextDay
+			} as UTSJSONObject)
+		}
+		return days
+	})
+
+	// 获取签到状态
+	async function fetchStatus() {
+		try {
+			const res = await request<any>({ url: '/checkin/status', method: 'GET' })
+			status.value = res.result as any
+		} catch (e) {
+			console.error('获取签到状态失败', e)
+		}
+	}
+
+	// 执行签到
+	async function handleCheckin() {
+		if (status.value.todayCheckedIn) return
+
+		try {
+			const res = await request<any>({ url: '/checkin', method: 'POST' })
+			const result = res.result as UTSJSONObject
+
+			// 准备奖励弹窗数据
+			const coupon = result['coupon'] as UTSJSONObject | null
+			if (coupon) {
+				lastReward.value = {
+					name: coupon['template_name'] as string,
+					value: formatRewardValue(coupon['template_type'] as number, coupon['template_value'] as string)
+				} as UTSJSONObject
+			} else {
+				lastReward.value = null
+			}
+
+			// 刷新状态
+			await fetchStatus()
+
+			// 显示弹窗
+			if (rewardPopup.value) {
+				(rewardPopup.value as any).open()
+			}
+		} catch (e) {
+			console.error('签到失败', e)
+		}
+	}
+
+	function closeRewardPopup() {
+		if (rewardPopup.value) {
+			(rewardPopup.value as any).close()
+		}
+	}
+
+	function goToCoupon() {
+		uni.navigateTo({ url: '/pages/coupon/coupon' })
+	}
+
+	// 判断某天是否已签到
+	function isDayChecked(dayNum: number): boolean {
+		const history = status.value.history || [] as any[]
+		for (let i = 0; i < history.length; i++) {
+			const h = history[i] as UTSJSONObject
+			if ((h['day_number'] as number) === dayNum) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// 格式化优惠券描述
+	function formatCouponDesc(template: any): string {
+		const t = template as UTSJSONObject
+		const type = t['type'] as number
+		const value = t['value'] as string
+		const minSpend = t['min_spend'] as string
+		if (type === 1) return `满${minSpend}减${value}`
+		if (type === 2) return `${(parseFloat(value) * 10).toFixed(0)}折`
+		if (type === 3) return `立减${value}元`
+		return ''
+	}
+
+	// 格式化奖励金额显示
+	function formatRewardValue(type: number, value: string): string {
+		if (type === 2) return `${(parseFloat(value) * 10).toFixed(0)}折`
+		return `¥${parseFloat(value).toFixed(2)}`
+	}
+
+	// 天数颜色
+	function getDayColor(day: number): string {
+		const colors = ['#667eea', '#f5576c', '#4facfe', '#43e97b', '#fa709a', '#a18cd1', '#d57eeb']
+		return colors[(day - 1) % 7]
+	}
+
+	onMounted(() => {
+		fetchStatus()
+	})
+</script>
+
+<style>
+	.container {
+		background-color: #f5f5f5;
+		min-height: 100vh;
+		padding-bottom: 40rpx;
+	}
+
+	/* ---- 顶部横幅 ---- */
+	.header-banner {
+		background: linear-gradient(135deg, #00CC99 0%, #00E6A7 100%);
+		padding: 60rpx 40rpx 80rpx;
+		align-items: center;
+	}
+
+	.streak-info {
+		align-items: center;
+	}
+
+	.streak-number {
+		font-size: 80rpx;
+		font-weight: bold;
+		color: #ffffff;
+		line-height: 1.1;
+	}
+
+	.streak-label {
+		font-size: 26rpx;
+		color: rgba(255, 255, 255, 0.85);
+		margin-top: 8rpx;
+	}
+
+	.today-info {
+		margin-top: 16rpx;
+		background-color: rgba(255, 255, 255, 0.2);
+		padding: 8rpx 24rpx;
+		border-radius: 20rpx;
+	}
+
+	.today-text {
+		font-size: 24rpx;
+		color: #ffffff;
+	}
+
+	/* ---- 卡片通用 ---- */
+	.card {
+		background-color: #ffffff;
+		margin: 20rpx;
+		padding: 30rpx;
+		border-radius: 16rpx;
+	}
+
+	/* ---- 签到进度卡片 ---- */
+	.progress-card {
+		margin-top: -40rpx;
+		position: relative;
+		z-index: 1;
+	}
+
+	.progress-header {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		margin-bottom: 30rpx;
+	}
+
+	.progress-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+	}
+
+	.progress-tip {
+		font-size: 22rpx;
+		color: #999999;
+	}
+
+	.dots-row {
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+	}
+
+	.dot-item {
+		align-items: center;
+		flex: 1;
+	}
+
+	.dot-circle {
+		width: 72rpx;
+		height: 72rpx;
+		border-radius: 36rpx;
+		justify-content: center;
+		align-items: center;
+		margin-bottom: 12rpx;
+	}
+
+	.dot-checked {
+		background-color: #00CC99;
+	}
+
+	.dot-today {
+		background-color: #ffffff;
+		border-width: 3rpx;
+		border-color: #00CC99;
+		border-style: solid;
+	}
+
+	.dot-future {
+		background-color: #e6f9f5;
+	}
+
+	.dot-text {
+		font-size: 28rpx;
+		font-weight: bold;
+	}
+
+	.dot-checked .dot-text {
+		color: #ffffff;
+	}
+
+	.dot-today .dot-text {
+		color: #00CC99;
+	}
+
+	.dot-future .dot-text {
+		color: #999999;
+	}
+
+	.dot-label {
+		font-size: 20rpx;
+		color: #999999;
+	}
+
+	/* ---- 奖励列表 ---- */
+	.reward-list-title {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #333333;
+		margin-bottom: 20rpx;
+	}
+
+	.reward-item {
+		flex-direction: row;
+		align-items: center;
+		padding: 20rpx 0;
+		border-bottom-width: 1rpx;
+		border-bottom-color: #f0f0f0;
+		border-bottom-style: solid;
+	}
+
+	.reward-item:last-child {
+		border-bottom-width: 0;
+	}
+
+	.reward-day-tag {
+		width: 48rpx;
+		height: 48rpx;
+		border-radius: 24rpx;
+		justify-content: center;
+		align-items: center;
+		margin-right: 20rpx;
+	}
+
+	.reward-day-num {
+		font-size: 24rpx;
+		font-weight: bold;
+		color: #ffffff;
+	}
+
+	.reward-info {
+		flex: 1;
+	}
+
+	.reward-coupon-name {
+		font-size: 28rpx;
+		color: #333333;
+		font-weight: 500;
+	}
+
+	.reward-coupon-desc {
+		font-size: 22rpx;
+		color: #999999;
+		margin-top: 4rpx;
+	}
+
+	.reward-status {
+		margin-left: 16rpx;
+	}
+
+	.reward-status-text {
+		font-size: 24rpx;
+		color: #999999;
+	}
+
+	.reward-status-text.checked {
+		color: #00CC99;
+	}
+
+	/* ---- 签到按钮 ---- */
+	.btn-area {
+		padding: 30rpx 20rpx 10rpx;
+	}
+
+	.checkin-btn {
+		background: linear-gradient(135deg, #00CC99 0%, #00E6A7 100%);
+		border-radius: 44rpx;
+		height: 88rpx;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.btn-disabled {
+		background: #cccccc;
+	}
+
+	.checkin-btn-text {
+		font-size: 32rpx;
+		font-weight: bold;
+		color: #ffffff;
+	}
+
+	/* ---- 卡券链接 ---- */
+	.coupon-link {
+		align-items: center;
+		padding: 20rpx;
+	}
+
+	.coupon-link-text {
+		font-size: 26rpx;
+		color: #00CC99;
+	}
+
+	/* ---- 签到成功弹窗 ---- */
+	.reward-popup {
+		background-color: #ffffff;
+		border-radius: 24rpx;
+		width: 560rpx;
+		padding: 50rpx 40rpx;
+		align-items: center;
+	}
+
+	.popup-icon {
+		font-size: 80rpx;
+		margin-bottom: 20rpx;
+	}
+
+	.popup-title {
+		font-size: 36rpx;
+		font-weight: bold;
+		color: #333333;
+		margin-bottom: 10rpx;
+	}
+
+	.popup-streak {
+		font-size: 26rpx;
+		color: #00CC99;
+		margin-bottom: 30rpx;
+	}
+
+	.popup-coupon {
+		background: linear-gradient(135deg, #fff5e6 0%, #ffe8cc 100%);
+		border-radius: 16rpx;
+		padding: 30rpx;
+		width: 100%;
+		align-items: center;
+		margin-bottom: 30rpx;
+	}
+
+	.popup-coupon-label {
+		font-size: 24rpx;
+		color: #999999;
+		margin-bottom: 10rpx;
+	}
+
+	.popup-coupon-value {
+		font-size: 52rpx;
+		font-weight: bold;
+		color: #FF4D4F;
+		margin-bottom: 6rpx;
+	}
+
+	.popup-coupon-name {
+		font-size: 26rpx;
+		color: #666666;
+	}
+
+	.popup-btn {
+		background: linear-gradient(135deg, #00CC99 0%, #00E6A7 100%);
+		border-radius: 44rpx;
+		height: 80rpx;
+		width: 100%;
+		justify-content: center;
+		align-items: center;
+	}
+
+	.popup-btn-text {
+		font-size: 30rpx;
+		font-weight: bold;
+		color: #ffffff;
+	}
+</style>
