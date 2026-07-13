@@ -9,11 +9,11 @@
 			<map
 				id="storeMap"
 				class="store-map"
-				:longitude="mapCenterLng"
-				:latitude="mapCenterLat"
+				:longitude="mapLongitude"
+				:latitude="mapLatitude"
 				:scale="mapScale"
 				:markers="mapMarkers"
-				:include-points="includePoints"
+				:circles="mapCircles"
 				:show-location="hasLocation"
 				:enable-zoom="true"
 				:enable-scroll="true"
@@ -22,8 +22,11 @@
 				@callouttap="onCalloutTap"
 			></map>
 			<!-- 重新定位按钮 -->
-			<view class="relocate-btn" @click="relocate">
-				<text class="relocate-icon">⊕</text>
+			<view
+				:class="['relocate-btn', drawerState === 'expanded' ? 'relocate-btn-up' : '']"
+				@click="relocate"
+			>
+				<uni-icons type="refresh" size="14" color="#00cc99" style="margin-right: 8rpx;"></uni-icons>
 				<text class="relocate-text">重新定位</text>
 			</view>
 			<!-- 定位状态提示 -->
@@ -32,44 +35,90 @@
 			</view>
 		</view>
 
-		<!-- 门店列表 -->
-		<scroll-view class="store-list" scroll-y :scroll-into-view="scrollToView">
-			<view
-				v-for="(item, index) in stores"
-				:key="item.id"
-				:id="'store-' + item.id"
-				:class="['store-item', 'card', selectedStoreId === item.id ? 'card-active' : '']"
-				@click="selectStore(item)"
+		<!-- 底部滑动抽屉容器 -->
+		<view
+			class="drawer-container"
+			:class="[drawerState === 'expanded' ? 'drawer-expanded' : 'drawer-collapsed']"
+			@touchstart="onTouchStart"
+			@touchmove="onTouchMove"
+			@touchend="onTouchEnd"
+		>
+
+
+			<!-- 门店列表 -->
+			<scroll-view
+				class="store-list"
+				:scroll-y="drawerState === 'expanded'"
+				:scroll-into-view="scrollToView"
+				@scroll="onScroll"
 			>
-				<view class="store-main">
-					<view class="store-info">
-						<view class="store-name-row">
-							<text class="store-name">{{item.name}}</text>
-							<text v-if="selectedStoreId === item.id" class="current-tag">当前</text>
+				<view
+					v-for="(item, index) in stores"
+					:key="item.id"
+					:id="'store-' + item.id"
+					:class="['store-item', 'card', selectedStoreId === item.id ? 'card-active' : '']"
+					@click="selectedStoreId = item.id"
+				>
+					<view class="store-main">
+						<view class="store-info">
+							<!-- 门店名称 -->
+							<view class="store-name-row">
+								<text class="store-name">{{item.name}}</text>
+								<text v-if="selectedStoreId === item.id" class="current-tag">当前</text>
+							</view>
+							
+							<!-- 距离、营业状态和标签 -->
+							<view class="store-meta-row">
+								<text class="distance">{{formatDistance(item.distance)}}</text>
+								<text :class="['status-tag', isStoreOpen(item.business_hours) ? 'status-open' : 'status-closed']">
+									{{ isStoreOpen(item.business_hours) ? '营业中' : '休息中' }}
+								</text>
+								<text class="badge-tag">自提</text>
+								<text class="badge-tag">外卖</text>
+							</view>
+
+							<!-- 地址 -->
+							<view class="store-detail-row">
+								<uni-icons type="location" size="14" color="#999999" style="margin-right: 8rpx; margin-top: 2rpx;"></uni-icons>
+								<text class="store-address">{{item.address}}</text>
+							</view>
+
+							<!-- 营业时间 -->
+							<view class="store-detail-row">
+								<uni-icons type="calendar" size="14" color="#999999" style="margin-right: 8rpx; margin-top: 2rpx;"></uni-icons>
+								<text class="time-label">营业时间：</text>
+								<text class="time-value">{{formatBusinessHours(item.business_hours)}}</text>
+							</view>
 						</view>
-						<text class="store-address">{{item.address}}</text>
-						<view class="store-time">
-							<text class="time-label">营业时间：</text>
-							<text class="time-value">{{formatBusinessHours(item.business_hours)}}</text>
+
+						<!-- 右侧操作栏 -->
+						<view class="store-actions">
+							<view class="action-btn" @click.stop="makePhoneCall(item.phone)">
+								<uni-icons type="phone-filled" size="18" color="#666666"></uni-icons>
+							</view>
+							<view class="action-btn" @click.stop="openNavigation(item)">
+								<uni-icons type="navigate-filled" size="18" color="#666666"></uni-icons>
+							</view>
 						</view>
 					</view>
-					<view class="store-status">
-						<text class="distance">{{formatDistance(item.distance)}}</text>
-						<text class="status-tag">营业中</text>
+
+					<!-- 选中后的底部确认操作 -->
+					<view v-if="selectedStoreId === item.id" class="card-bottom-action" @click.stop="selectStore(item)">
+						<text class="order-btn-text">确认选择并点单</text>
 					</view>
 				</view>
-			</view>
-			<view v-if="stores.length === 0 && !locationLoading" class="empty-state">
-				<text class="empty-text">暂无门店数据</text>
-			</view>
-		</scroll-view>
+				<view v-if="stores.length === 0 && !locationLoading" class="empty-state">
+					<text class="empty-text">暂无门店数据</text>
+				</view>
+			</scroll-view>
+		</view>
 	</view>
 </template>
 
 <script setup lang="uts">
 	import { ref, computed, onMounted } from 'vue'
 	import { request } from '@/utils/request.uts'
-	import { formatDistance, formatBusinessHours } from '@/utils/format.uts'
+	import { formatDistance, formatBusinessHours, isStoreOpen } from '@/utils/format.uts'
 	import { debounce } from '@/utils/common.uts'
 	import { useAppStore, StoreInfo } from '@/store/app.uts'
 	import { useCartStore } from '@/store/cart.uts'
@@ -81,37 +130,71 @@
 	// 地图相关状态
 	const userLongitude = ref(0)
 	const userLatitude = ref(0)
-	const mapScale = ref(14)
+	const mapLongitude = ref(116.397428)
+	const mapLatitude = ref(39.90923)
+	const mapScale = ref(13)
 	const selectedStoreId = ref(-1)
 	const scrollToView = ref('')
 	const hasLocation = ref(false)
 	const locationLoading = ref(true)
 
-	// 地图中心点：有定位时用用户位置，无定位时用第一个门店或默认值
-	const mapCenterLng = computed(() => {
-		if (hasLocation.value) return userLongitude.value
-		if (stores.value.length > 0 && stores.value[0].longitude != null) return stores.value[0].longitude as number
-		return 116.397428
-	})
-	const mapCenterLat = computed(() => {
-		if (hasLocation.value) return userLatitude.value
-		if (stores.value.length > 0 && stores.value[0].latitude != null) return stores.value[0].latitude as number
-		return 39.90923
-	})
+	// 底部抽屉相关状态与手势逻辑
+	const drawerState = ref('collapsed') // 'collapsed' | 'expanded'
+	const startY = ref(0)
+	const isDragging = ref(false)
+	const scrollTop = ref(0)
 
-	// 自动缩放包含所有门店点和用户位置
-	const includePoints = computed(() => {
-		const points = [] as UTSJSONObject[]
-		if (hasLocation.value) {
-			points.push({ longitude: userLongitude.value, latitude: userLatitude.value } as UTSJSONObject)
+	function onTouchStart(e : any) {
+		const touches = e.touches as any[]
+		if (touches.length > 0) {
+			startY.value = touches[0].clientY as number
+			isDragging.value = true
 		}
-		for (let i = 0; i < stores.value.length; i++) {
-			const s = stores.value[i]
-			if (s.longitude != null && s.latitude != null) {
-				points.push({ longitude: s.longitude as number, latitude: s.latitude as number } as UTSJSONObject)
+	}
+
+	function onTouchMove(e : any) {
+		if (!isDragging.value) return
+		const touches = e.touches as any[]
+		if (touches.length > 0) {
+			const clientY = touches[0].clientY as number
+			const moveY = clientY - startY.value
+
+			// 折叠状态下，往上拖动超过一定距离（30px），触发展开
+			if (drawerState.value === 'collapsed' && moveY < -30) {
+				drawerState.value = 'expanded'
+				isDragging.value = false
+			}
+
+			// 展开状态下，如果列表回到最顶部（scrollTop <= 5），往下拖动超过一定距离（30px），触发折叠
+			if (drawerState.value === 'expanded' && scrollTop.value <= 5 && moveY > 30) {
+				drawerState.value = 'collapsed'
+				isDragging.value = false
 			}
 		}
-		return points
+	}
+
+	function onTouchEnd() {
+		isDragging.value = false
+	}
+
+	function onScroll(e : any) {
+		scrollTop.value = e.detail.scrollTop as number
+	}
+
+	// 5公里直径（2.5公里半径）的圆圈
+	const mapCircles = computed(() => {
+		const circles = [] as UTSJSONObject[]
+		if (hasLocation.value) {
+			circles.push({
+				latitude: userLatitude.value,
+				longitude: userLongitude.value,
+				color: '#00cc9988', // 边框颜色
+				fillColor: '#00cc991a', // 填充颜色（浅绿色半透明）
+				radius: 2500, // 半径2.5公里，直径即5公里
+				strokeWidth: 2
+			} as UTSJSONObject)
+		}
+		return circles
 	})
 
 	// 构建地图标记
@@ -121,30 +204,24 @@
 			const s = stores.value[i]
 			if (s.longitude == null || s.latitude == null) continue
 
-			const distText = typeof s.distance === 'number' ? formatDistance(s.distance) : (s.distance as string ?? '')
-			const calloutContent = `${s.name}\n${s.address}\n${distText}`
-
 			markers.push({
 				id: s.id,
 				longitude: s.longitude,
 				latitude: s.latitude,
 				title: s.name,
-				iconPath: '/static/images/marker.png',
-				width: 40,
-				height: 54,
+				iconPath: '/static/images/icon.png',
+				width: 36,
+				height: 36,
 				anchor: { x: 0.5, y: 1 } as UTSJSONObject,
 				callout: {
-					content: calloutContent,
-					color: '#333333',
-					fontSize: 13,
-					borderRadius: 12,
-					borderWidth: 1,
-					borderColor: '#00CC99',
-					bgColor: '#ffffff',
-					padding: 12,
-					display: 'BYCLICK',
-					textAlign: 'center',
-					boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+					content: s.name,
+					color: '#ffffff',
+					fontSize: 11,
+					borderRadius: 16,
+					bgColor: '#00CC99',
+					padding: 6,
+					display: 'ALWAYS',
+					textAlign: 'center'
 				} as UTSJSONObject
 			} as UTSJSONObject)
 		}
@@ -267,6 +344,10 @@
 		userLongitude.value = lng
 		userLatitude.value = lat
 		hasLocation.value = true
+		
+		// 加上微小的随机偏置，强制触发 Vue 的 reactivity 重新渲染，使拖动后的地图视口重新居中归位到用户当前位置
+		mapLongitude.value = lng + (Math.random() - 0.5) * 0.000001
+		mapLatitude.value = lat + (Math.random() - 0.5) * 0.000001
 
 		// 请求附近门店（服务端已有 Haversine 距离计算）
 		request<any>({
@@ -294,6 +375,11 @@
 			const list = data.result.list as StoreInfo[]
 			// 全量接口无距离字段，有定位时前端补充计算
 			stores.value = applyDistance(list)
+			// 无定位时，以第一个门店位置作为地图中心
+			if (!hasLocation.value && list.length > 0 && list[0].longitude != null && list[0].latitude != null) {
+				mapLongitude.value = list[0].longitude as number
+				mapLatitude.value = list[0].latitude as number
+			}
 		})
 	}
 
@@ -317,6 +403,96 @@
 		const store = stores.value.find(s => s.id === markerId)
 		if (store != null) {
 			selectStore(store)
+		}
+	}
+
+	// 拨打电话
+	function makePhoneCall(phone : string | null) {
+		if (phone == null || phone === '') {
+			uni.showToast({ title: '该门店暂未提供电话', icon: 'none' })
+			return
+		}
+		uni.makePhoneCall({
+			phoneNumber: phone,
+			fail: () => {
+				console.log('拨号失败')
+			}
+		})
+	}
+
+	// 导航
+	function openNavigation(store : StoreInfo) {
+		console.log('开始导航到门店:', store)
+		
+		if (store.longitude == null || store.latitude == null) {
+			uni.showToast({ title: '门店经纬度位置缺失，无法导航', icon: 'none' })
+			return
+		}
+		
+		// 显式解析为浮点数以保证类型完全正确，避免后端传入 String 格式导致底层原生组件解析失效
+		let lat = 0.0
+		let lng = 0.0
+		
+		if (typeof store.latitude === 'number') {
+			lat = store.latitude as number
+		} else {
+			lat = parseFloat(store.latitude.toString())
+		}
+		
+		if (typeof store.longitude === 'number') {
+			lng = store.longitude as number
+		} else {
+			lng = parseFloat(store.longitude.toString())
+		}
+		
+		if (isNaN(lat) || isNaN(lng) || lat === 0.0 || lng === 0.0) {
+			uni.showToast({ title: '门店坐标无效，无法导航', icon: 'none' })
+			return
+		}
+
+		const name = store.name
+		const address = store.address
+
+		let handled = false
+
+		// #ifdef APP-PLUS
+		handled = true
+		const url = `androidamap://viewMap?sourceApplication=yonggetea&poiname=${name}&lat=${lat}&lon=${lng}&dev=0`
+		const iosUrl = `iosamap://viewMap?sourceApplication=yonggetea&poiname=${name}&lat=${lat}&lon=${lng}&dev=0`
+		
+		if (uni.getSystemInfoSync().platform === 'ios') {
+			plus.runtime.openURL(iosUrl, (err) => {
+				uni.openLocation({
+					longitude: lng,
+					latitude: lat,
+					name: name,
+					address: address
+				})
+			})
+		} else {
+			plus.runtime.openURL(url, (err) => {
+				uni.openLocation({
+					longitude: lng,
+					latitude: lat,
+					name: name,
+					address: address
+				})
+			})
+		}
+		// #endif
+
+		if (!handled) {
+			// 小程序、H5 平台使用 uni.openLocation，这是最安全且支持高德地图等多种地图应用拉起的方法
+			uni.openLocation({
+				longitude: lng,
+				latitude: lat,
+				name: name,
+				address: address,
+				fail: (err) => {
+					console.error('uni.openLocation fail:', err)
+					uni.showToast({ title: '打开导航失败', icon: 'none' })
+				}
+			})
 		}
 	}
 
@@ -383,7 +559,9 @@
 <style>
 	.container {
 		background-color: #f5f5f5;
-		min-height: 100vh;
+		height: 100vh;
+		position: relative;
+		overflow: hidden;
 	}
 
 	.search-bar {
@@ -394,7 +572,7 @@
 	/* 地图容器 */
 	.map-wrapper {
 		width: 100%;
-		height: 500rpx;
+		height: calc(100vh - 100rpx - 33.3vh);
 		overflow: hidden;
 		border-radius: 0 0 32rpx 32rpx;
 		position: relative;
@@ -416,13 +594,14 @@
 		flex-direction: row;
 		align-items: center;
 		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+		z-index: 10;
+		transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 	}
 
-	.relocate-icon {
-		font-size: 28rpx;
-		color: #00cc99;
-		margin-right: 8rpx;
+	.relocate-btn-up {
+		transform: translateY(-16.7vh);
 	}
+
 
 	.relocate-text {
 		font-size: 22rpx;
@@ -444,14 +623,43 @@
 		color: #ffffff;
 	}
 
+	/* 底部抽屉容器 */
+	.drawer-container {
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 50vh; /* 屏幕的 1/2 */
+		background-color: #f5f5f5;
+		border-radius: 32rpx 32rpx 0 0;
+		box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+		display: flex;
+		flex-direction: column;
+		overflow: hidden;
+		z-index: 99;
+		transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+	}
+
+	/* 折叠状态：向下平移 16.7vh，使其只露出 33.3vh (1/3) */
+	.drawer-collapsed {
+		transform: translateY(16.7vh);
+	}
+
+	/* 展开状态：完全显示 50vh (1/2) */
+	.drawer-expanded {
+		transform: translateY(0);
+	}
+
 	/* 门店列表 */
 	.store-list {
-		height: calc(100vh - 620rpx);
+		flex: 1;
+		height: 0;
+		background-color: #f5f5f5;
 	}
 
 	.card {
 		background-color: #ffffff;
-		margin: 20rpx;
+		margin: 10rpx 20rpx;
 		padding: 30rpx;
 		border-radius: 16rpx;
 		border-left: 6rpx solid transparent;
@@ -492,15 +700,40 @@
 		margin-left: 12rpx;
 	}
 
-	.store-address {
-		font-size: 26rpx;
-		color: #999999;
-		margin-bottom: 20rpx;
-	}
-
-	.store-time {
+	.store-meta-row {
 		flex-direction: row;
 		align-items: center;
+		margin-bottom: 16rpx;
+		flex-wrap: wrap;
+	}
+
+	.badge-tag {
+		font-size: 20rpx;
+		color: #00cc99;
+		background-color: #e6f9f5;
+		padding: 2rpx 10rpx;
+		border-radius: 4rpx;
+		margin-left: 12rpx;
+	}
+
+	.store-detail-row {
+		flex-direction: row;
+		align-items: flex-start;
+		margin-top: 12rpx;
+	}
+
+	.icon-indicator {
+		font-size: 26rpx;
+		margin-right: 8rpx;
+		line-height: 36rpx;
+	}
+
+	.store-address {
+		font-size: 26rpx;
+		color: #666666;
+		flex: 1;
+		line-height: 36rpx;
+		margin-bottom: 0;
 	}
 
 	.time-label {
@@ -513,23 +746,80 @@
 		color: #666666;
 	}
 
-	.store-status {
-		align-items: flex-end;
-		justify-content: space-between;
-	}
-
 	.distance {
 		font-size: 28rpx;
 		font-weight: bold;
 		color: #00cc99;
+		margin-right: 12rpx;
 	}
 
 	.status-tag {
 		font-size: 22rpx;
-		color: #00cc99;
-		background-color: #e6f9f5;
 		padding: 4rpx 12rpx;
 		border-radius: 6rpx;
+	}
+
+	.status-open {
+		color: #00cc99;
+		background-color: #e6f9f5;
+	}
+
+	.status-closed {
+		color: #999999;
+		background-color: #f5f5f5;
+	}
+
+	/* 右侧快捷操作 */
+	.store-actions {
+		flex-direction: row;
+		align-items: center;
+		align-self: center;
+		margin-left: 20rpx;
+	}
+
+	.action-btn {
+		width: 72rpx;
+		height: 72rpx;
+		border-radius: 36rpx;
+		background-color: #f9f9f9;
+		border: 1px solid #eeeeee;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		margin-left: 16rpx;
+		box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+		transition: background-color 0.2s;
+	}
+
+	.action-btn:active {
+		background-color: #f0f0f0;
+	}
+
+	.action-icon {
+		font-size: 32rpx;
+	}
+
+	/* 选中卡片的底部按钮 */
+	.card-bottom-action {
+		margin-top: 24rpx;
+		height: 80rpx;
+		background-image: linear-gradient(135deg, #00e5b2 0%, #00cc99 100%);
+		border-radius: 40rpx;
+		display: flex;
+		justify-content: center;
+		align-items: center;
+		box-shadow: 0 4px 12px rgba(0, 204, 153, 0.2);
+		transition: opacity 0.2s;
+	}
+
+	.card-bottom-action:active {
+		opacity: 0.9;
+	}
+
+	.order-btn-text {
+		font-size: 28rpx;
+		color: #ffffff;
+		font-weight: bold;
 	}
 
 	.empty-state {

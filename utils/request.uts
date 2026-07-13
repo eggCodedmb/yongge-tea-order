@@ -1,6 +1,7 @@
 import { useUserStore } from '@/store/user.uts'
 
-export const BASE_URL = 'http://192.168.2.240:8800'
+export const BASE_URL = 'https://store.hupokeji.top/api'
+export const STATIC_URL = 'https://store.hupokeji.top'
 
 export interface RequestOptions {
 	url: string;

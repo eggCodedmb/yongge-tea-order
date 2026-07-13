@@ -70,6 +70,42 @@
 				</view>
 			</view>
 
+			<!-- 支付方式选择 -->
+			<view class="section card payment-section">
+				<view class="section-title">
+					<text>支付方式</text>
+				</view>
+				<view class="pay-methods-list">
+					<view class="pay-method-item" :class="{'pay-method-active': selectedPayType === 1}" @click="selectedPayType = 1">
+						<view class="pay-method-left">
+							<view class="pay-icon-circle pay-wechat-circle"></view>
+							<text class="pay-method-name">微信支付</text>
+						</view>
+						<view class="pay-check" :class="{'pay-check-active': selectedPayType === 1}">
+							<text v-if="selectedPayType === 1" class="check-icon">✓</text>
+						</view>
+					</view>
+					<view class="pay-method-item" :class="{'pay-method-active': selectedPayType === 2}" @click="selectedPayType = 2">
+						<view class="pay-method-left">
+							<view class="pay-icon-circle pay-alipay-circle"></view>
+							<text class="pay-method-name">支付宝</text>
+						</view>
+						<view class="pay-check" :class="{'pay-check-active': selectedPayType === 2}">
+							<text v-if="selectedPayType === 2" class="check-icon">✓</text>
+						</view>
+					</view>
+					<view class="pay-method-item" :class="{'pay-method-active': selectedPayType === 3}" @click="selectedPayType = 3">
+						<view class="pay-method-left">
+							<view class="pay-icon-circle pay-unionpay-circle"></view>
+							<text class="pay-method-name">云闪付</text>
+						</view>
+						<view class="pay-check" :class="{'pay-check-active': selectedPayType === 3}">
+							<text v-if="selectedPayType === 3" class="check-icon">✓</text>
+						</view>
+					</view>
+				</view>
+			</view>
+
 			<!-- 备注 -->
 			<view class="section card">
 				<view class="remark-row">
@@ -180,6 +216,7 @@
 	const userStore = useUserStore()
 	const addressStore = useAddressStore()
 	const remark = ref('')
+	const selectedPayType = ref(1) // 1: 微信支付, 2: 支付宝, 3: 云闪付
 	const uniPayRef = ref(null)
 	const currentOrderId = ref(0)
 
@@ -484,7 +521,8 @@
 					order_type: appStore.orderMode === 'self-pickup' ? 1 : 2,
 					address_id: appStore.orderMode === 'delivery' ? addressStore.selectedAddress?.id : 0,
 					remark: remark.value,
-					coupon_id: selectedCouponId.value > 0 ? selectedCouponId.value : undefined
+					coupon_id: selectedCouponId.value > 0 ? selectedCouponId.value : undefined,
+					pay_type: selectedPayType.value
 				}
 			})
 			currentOrderId.value = createRes.result.id
@@ -496,7 +534,8 @@
 				data: {
 					id: currentOrderId.value,
 					out_trade_no: `MOCK_OUT_${Date.now()}`,
-					transaction_id: `MOCK_TRANS_${Date.now()}`
+					transaction_id: `MOCK_TRANS_${Date.now()}`,
+					pay_type: selectedPayType.value
 				}
 			})
 
@@ -556,7 +595,8 @@
 				data: {
 					id: currentOrderId.value,
 					out_trade_no: res['out_trade_no'],
-					transaction_id: res['transaction_id']
+					transaction_id: res['transaction_id'],
+					pay_type: selectedPayType.value
 				}
 			})
 
@@ -1103,5 +1143,82 @@
 		font-size: 24rpx;
 		color: #666;
 		margin-right: 10rpx;
+	}
+
+	/* 支付方式选择样式 */
+	.payment-section {
+		padding: 24rpx 30rpx;
+	}
+
+	.pay-methods-list {
+		display: flex;
+		flex-direction: column;
+		margin-top: 10rpx;
+	}
+
+	.pay-method-item {
+		display: flex;
+		flex-direction: row;
+		justify-content: space-between;
+		align-items: center;
+		padding: 24rpx 0;
+		border-bottom: 1rpx solid #fafafa;
+	}
+	
+	.pay-method-item:last-child {
+		border-bottom: none;
+	}
+
+	.pay-method-left {
+		display: flex;
+		flex-direction: row;
+		align-items: center;
+	}
+
+	.pay-icon-circle {
+		width: 16rpx;
+		height: 16rpx;
+		border-radius: 50%;
+		margin-right: 20rpx;
+	}
+	.pay-wechat-circle {
+		background-color: #07c160;
+	}
+	.pay-alipay-circle {
+		background-color: #1677ff;
+	}
+	.pay-unionpay-circle {
+		background-color: #d92b34;
+	}
+
+	.pay-method-name {
+		font-size: 28rpx;
+		color: #333;
+	}
+
+	.pay-method-active .pay-method-name {
+		font-weight: bold;
+		color: #000;
+	}
+
+	.pay-check {
+		width: 36rpx;
+		height: 36rpx;
+		border: 2rpx solid #ccc;
+		border-radius: 50%;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+
+	.pay-check-active {
+		border-color: #00cc99;
+		background-color: #00cc99;
+	}
+
+	.check-icon {
+		color: #ffffff;
+		font-size: 20rpx;
+		font-weight: bold;
 	}
 </style>

@@ -227,7 +227,7 @@
 	import { ref, onMounted, watch, computed } from 'vue'
 	import { useAppStore } from '@/store/app.uts'
 	import { useCartStore, CartItem } from '@/store/cart.uts'
-	import { request, BASE_URL } from '@/utils/request.uts'
+	import { request, STATIC_URL } from '@/utils/request.uts'
 	import { formatDistance } from '@/utils/format.uts'
 
 	interface Product {
@@ -421,9 +421,13 @@
 
 	function formatImageUrl(url: any): string {
 		if (url == null || url == '') return '/static/logo.png' 
-		const urlStr = url as string
+		let urlStr = url as string
+		if (urlStr.includes('127.0.0.1:8800') || urlStr.includes('localhost:8800')) {
+			urlStr = urlStr.replace('http://127.0.0.1:8800', '').replace('http://localhost:8800', '')
+		}
 		if (urlStr.startsWith('http')) return urlStr
-		return BASE_URL + urlStr
+		const cleanUrl = urlStr.startsWith('/') ? urlStr : '/' + urlStr
+		return STATIC_URL + cleanUrl
 	}
 
 	async function openSpecDrawer(product: Product) {

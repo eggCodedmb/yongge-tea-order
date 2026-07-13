@@ -1,6 +1,6 @@
 <template>
-  <view class="popup-root" :class="'popup-'+type" v-if="isOpen" v-show="isShow" @click="clickMask">
-    <view @click.stop class="popup-content" :class="'popup-content-'+type">
+  <view class="popup-root" :class="'popup-' + type + (animateShow ? ' popup-root-show' : '')" v-if="isOpen" v-show="isShow" @click="clickMask">
+    <view @click.stop class="popup-content" :class="'popup-content-' + type + (animateShow ? ' popup-content-show' : '')" :style="'background-color: ' + backgroundColor">
       <slot></slot>
     </view>
   </view>
@@ -9,12 +9,16 @@
 <script>
   type CloseCallBack = ()=> void;
   let closeCallBack:CloseCallBack = () :void => {};
+  
+  const timerMap = new Map<any, any>();
+
   export default {
     emits:["close","clickMask"],
     data() {
       return {
         isShow:false,
-        isOpen:false
+        isOpen:false,
+        animateShow:false
       }
     },
     props: {
@@ -22,9 +26,17 @@
         type: Boolean,
         default: true
       },
+      isMaskClick: {
+        type: Boolean,
+        default: true
+      },
       type: {
         type: String,
         default: "center"
+      },
+      backgroundColor: {
+        type: String,
+        default: "transparent"
       }
     },
     watch: {
@@ -41,8 +53,28 @@
           if(isOpen && this.isShow == false){
             this.isShow = true
           }
+          if (isOpen) {
+            const prevTimer = timerMap.get(this);
+            if (prevTimer != null) {
+              clearTimeout(prevTimer as number);
+            }
+            const timer = setTimeout(() => {
+              this.animateShow = true;
+              timerMap.delete(this);
+            }, 50);
+            timerMap.set(this, timer);
+          } else {
+            this.animateShow = false;
+          }
         },
         immediate:true
+      }
+    },
+    beforeUnmount() {
+      const prevTimer = timerMap.get(this);
+      if (prevTimer != null) {
+        clearTimeout(prevTimer as number);
+        timerMap.delete(this);
       }
     },
     methods:{
@@ -50,15 +82,24 @@
         this.isOpen = true;
       },
       clickMask(){
-        if(this.maskClick == true){
+        if(this.maskClick == true && this.isMaskClick == true){
           this.$emit('clickMask')
           this.close()
         }
       },
       close(): void{
-        this.isOpen = false;
-        this.$emit('close')
-        closeCallBack()
+        const prevTimer = timerMap.get(this);
+        if (prevTimer != null) {
+          clearTimeout(prevTimer as number);
+        }
+        this.animateShow = false;
+        const timer = setTimeout(() => {
+          this.isOpen = false;
+          this.$emit('close')
+          closeCallBack()
+          timerMap.delete(this);
+        }, 300);
+        timerMap.set(this, timer);
       },
       hiden(){
         this.isShow = false
@@ -78,10 +119,15 @@
   width: 750rpx;
   height: 100%;
   flex: 1;
-  background-color: rgba(0, 0, 0, 0.4);
+  background-color: rgba(0, 0, 0, 0);
   justify-content: center;
   align-items: center;
   z-index: 99;
+  transition: background-color 300ms ease-out;
+}
+
+.popup-root-show {
+  background-color: rgba(0, 0, 0, 0.4);
 }
 
 .popup-bottom {
@@ -90,14 +136,37 @@
 
 .popup-content {
   width: 750rpx;
+  transition: transform 300ms cubic-bezier(0.25, 0.8, 0.25, 1), opacity 300ms;
 }
 
 .popup-content-center {
   align-items: center;
   justify-content: center;
+  opacity: 0;
+  transform: scale(0.9);
 }
 
 .popup-content-bottom {
   width: 750rpx;
+  transform: translateY(100%);
+}
+
+.popup-content-top {
+  width: 750rpx;
+  transform: translateY(-100%);
+}
+
+/* Active states */
+.popup-root-show .popup-content-center {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.popup-root-show .popup-content-bottom {
+  transform: translateY(0);
+}
+
+.popup-root-show .popup-content-top {
+  transform: translateY(0);
 }
 </style>

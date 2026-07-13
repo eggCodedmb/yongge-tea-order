@@ -27,3 +27,73 @@ export function formatBusinessHours(hours : any) : string {
 	
 	return hours
 }
+
+export function isStoreOpen(hours : any) : boolean {
+	if (hours == null || hours === '') return true
+	
+	let hoursStr = ''
+	if (typeof hours !== 'string') {
+		hoursStr = hours.toString()
+	} else {
+		hoursStr = hours
+	}
+
+	const timeRanges = [] as string[]
+	try {
+		if (hoursStr.startsWith('[') && hoursStr.endsWith(']')) {
+			const arr = JSON.parse(hoursStr)
+			if (Array.isArray(arr)) {
+				for (let i = 0; i < arr.length; i++) {
+					const item = arr[i]
+					if (item != null) {
+						timeRanges.push(item.toString())
+					}
+				}
+			}
+		} else {
+			timeRanges.push(hoursStr)
+		}
+	} catch (e) {
+		timeRanges.push(hoursStr)
+	}
+
+	if (timeRanges.length === 0) {
+		return true
+	}
+
+	const now = new Date()
+	const currentHour = now.getHours()
+	const currentMin = now.getMinutes()
+	const currentTotalMin = currentHour * 60 + currentMin
+
+	for (let i = 0; i < timeRanges.length; i++) {
+		const range = timeRanges[i]
+		const parts = range.split('-')
+		if (parts.length === 2) {
+			const startParts = parts[0].split(':')
+			const endParts = parts[1].split(':')
+			if (startParts.length === 2 && endParts.length === 2) {
+				const startHour = parseInt(startParts[0], 10)
+				const startMin = parseInt(startParts[1], 10)
+				const endHour = parseInt(endParts[0], 10)
+				const endMin = parseInt(endParts[1], 10)
+
+				const startTotalMin = startHour * 60 + startMin
+				const endTotalMin = endHour * 60 + endMin
+
+				if (endTotalMin < startTotalMin) {
+					// 跨天情况，例如 22:00-02:00
+					if (currentTotalMin >= startTotalMin || currentTotalMin < endTotalMin) {
+						return true
+					}
+				} else {
+					if (currentTotalMin >= startTotalMin && currentTotalMin <= endTotalMin) {
+						return true
+					}
+				}
+			}
+		}
+	}
+
+	return false
+}

@@ -8,6 +8,7 @@ export interface StoreInfo {
 	business_hours?: string;
 	longitude?: number;
 	latitude?: number;
+	phone?: string;
 }
 
 export const useAppStore = defineStore('app', {
@@ -26,7 +27,8 @@ export const useAppStore = defineStore('app', {
 				distance: store.distance,
 				business_hours: store.business_hours,
 				longitude: store.longitude,
-				latitude: store.latitude
+				latitude: store.latitude,
+				phone: store.phone
 			} as StoreInfo
 		},
 		setOrderMode(mode: 'self-pickup' | 'delivery') {
