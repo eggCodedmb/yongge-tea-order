@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { request } from '@/utils/request.uts'
+import { useAppStore } from './app.uts'
 
 export interface CartItem {
 	id: number; // 商品ID (goods_id)
@@ -83,23 +84,19 @@ export const useCartStore = defineStore('cart', {
 		},
 
 		async addToCart(item: CartItem) {
-			// 确保新加入的默认是选中状态
-			item.selected = true
+			const appStore = useAppStore()
+			const storeId = appStore.currentStore?.id
 			
-			// 修正：现在根据 ID 和 规格 共同判断是否合并
-			const index = this.items.findIndex(i => i.id === item.id && i.specs.join(',') === item.specs.join(','))
-			if (index > -1) {
-				this.items[index].quantity += 1
-				this.items[index].totalPrice = Math.round((this.items[index].price * this.items[index].quantity) * 100) / 100
-				// 重新加入时强制设为选中
-				this.items[index].selected = true
-			} else {
-				this.items.push(item)
+			if (storeId == null) {
+				uni.showToast({ title: '请先选择门店', icon: 'none' })
+				throw new Error('请先选择门店')
 			}
-			this.saveToStorage()
 
 			try {
-				const reqData = { goods_id: item.id } as UTSJSONObject
+				const reqData = { 
+					goods_id: item.id,
+					store_id: storeId
+				} as UTSJSONObject
 				if (item.specs.length > 0) {
 					reqData['specs'] = item.specs.join(',')
 				}
@@ -109,37 +106,58 @@ export const useCartStore = defineStore('cart', {
 					method: 'POST',
 					data: reqData
 				})
+				
 				if (res.result != null && res.result['id'] != null) {
 					const cartId = res.result['id'] as number
-					// 修正：同步 cartId 时也要匹配规格
+					item.selected = true
+					
+					// 根据 ID 和规格判断是否合并
 					const idx = this.items.findIndex(i => i.id === item.id && i.specs.join(',') === item.specs.join(','))
 					if (idx > -1) {
+						this.items[idx].quantity += item.quantity
+						this.items[idx].totalPrice = Math.round((this.items[idx].price * this.items[idx].quantity) * 100) / 100
+						this.items[idx].selected = true
 						this.items[idx].cartId = cartId
-						this.saveToStorage()
+					} else {
+						const newItem = { ...item, cartId } as CartItem
+						this.items.push(newItem)
 					}
+					this.saveToStorage()
 				}
 			} catch (e) {
 				console.error('Sync add to cart failed', e)
+				throw e
 			}
 		},
 		
 		async increaseQuantity(index: number) {
 			const item = this.items[index]
 			if (item == null) return
+			const originalQuantity = item.quantity
 			item.quantity += 1
 			item.totalPrice = Math.round((item.price * item.quantity) * 100) / 100
 			this.saveToStorage()
 
 			try {
 				if (item.cartId > 0) {
+					const appStore = useAppStore()
+					const storeId = appStore.currentStore?.id
+					const reqData = { number: item.quantity } as UTSJSONObject
+					if (storeId != null) {
+						reqData['store_id'] = storeId
+					}
 					await request<any>({
 						url: `/cart/number/${item.cartId}`,
 						method: 'PATCH',
-						data: { number: item.quantity }
+						data: reqData
 					})
 				}
 			} catch (e) {
 				console.error('Sync increase quantity failed', e)
+				// 回滚数量和价格！
+				item.quantity = originalQuantity
+				item.totalPrice = Math.round((item.price * item.quantity) * 100) / 100
+				this.saveToStorage()
 			}
 		},
 		
@@ -301,6 +319,154 @@ export const useCartStore = defineStore('cart', {
 				this.items = []
 				this.saveToStorage()
 				return { transferred: [], removed: removedItems, updated: [] }
+			}
+		},
+
+		/**
+		 * 批量校验商品并将符合条件的加入购物车
+		 */
+		async addReorderItems(orderItems: any[], targetStoreId: number) {
+			if (orderItems.length === 0) return
+
+			uni.showLoading({ title: '正在校验商品...' })
+			try {
+				const reqItems = orderItems.map((item: any): UTSJSONObject => {
+					let nameVal = '未知商品'
+					let originalIdVal = 0
+
+					const p = item['product']
+					if (p != null) {
+						const pObj = p as UTSJSONObject
+						if (pObj['goods_name'] != null) {
+							nameVal = pObj['goods_name'] as string
+						}
+						if (pObj['id'] != null) {
+							originalIdVal = pObj['id'] as number
+						}
+					} else {
+						if (item['name'] != null) {
+							nameVal = item['name'] as string
+						}
+						if (item['goods_id'] != null) {
+							originalIdVal = item['goods_id'] as number
+						}
+					}
+
+					return {
+						goods_id: originalIdVal,
+						name: nameVal
+					} as UTSJSONObject
+				})
+
+				const res = await request<any>({
+					url: '/goods/batch_check',
+					method: 'POST',
+					data: {
+						store_id: targetStoreId,
+						items: reqItems
+					}
+				})
+				
+				uni.hideLoading()
+				const checkResult = res.result as CheckResultItem[]
+				const addedItems = [] as string[]
+				const failedItems = [] as string[]
+
+				for (const item of orderItems) {
+					let itemName = '未知商品'
+					const p = item['product']
+					if (p != null) {
+						const pObj = p as UTSJSONObject
+						if (pObj['goods_name'] != null) {
+							itemName = pObj['goods_name'] as string
+						}
+					} else if (item['name'] != null) {
+						itemName = item['name'] as string
+					}
+
+					const check = checkResult.find((c: CheckResultItem): boolean => c.original_name === itemName)
+
+					if (check != null && check.available && check.matched_id != null) {
+						let specsArray = [] as string[]
+						const itemSpecs = item['specs']
+						if (itemSpecs != null) {
+							if (Array.isArray(itemSpecs)) {
+								specsArray = itemSpecs as string[]
+							} else {
+								specsArray = (itemSpecs as string).split('/')
+							}
+						}
+						
+						let specIdsArray = [] as number[]
+						const itemSpecIds = item['spec_ids']
+						if (itemSpecIds != null) {
+							if (Array.isArray(itemSpecIds)) {
+								specIdsArray = itemSpecIds as number[]
+							} else {
+								specIdsArray = (itemSpecIds as string).split(',').map((id : string) : number => parseInt(id))
+							}
+						}
+
+						const oldQuantity = item['quantity'] != null ? (item['quantity'] as number) : 1
+						const imgVal = (check.image != null && check.image !== '') 
+							? check.image 
+							: (p != null && (p as UTSJSONObject)['goods_img'] != null ? ((p as UTSJSONObject)['goods_img'] as string) : '')
+
+						const cartItem = {
+							id: check.matched_id,
+							cartId: 0,
+							name: check.matched_name || itemName,
+							price: check.price,
+							quantity: oldQuantity,
+							specs: specsArray,
+							spec_ids: specIdsArray,
+							toppings: [] as string[],
+							totalPrice: check.price * oldQuantity,
+							image: imgVal,
+							selected: true
+						} as CartItem
+
+						// 调用 addToCart 会再次进行后端校验并同步到数据库购物车
+						try {
+							await this.addToCart(cartItem)
+							addedItems.push(itemName)
+						} catch (addErr) {
+							failedItems.push(itemName)
+						}
+					} else {
+						failedItems.push(itemName)
+					}
+				}
+
+				if (failedItems.length > 0) {
+					if (addedItems.length > 0) {
+						uni.showModal({
+							title: '部分商品不可用',
+							content: `以下商品因无货或不在当前门店未添加：${failedItems.join('、')}`,
+							showCancel: false,
+							confirmText: '知道了'
+						})
+					} else {
+						uni.showModal({
+							title: '商品不可用',
+							content: `所选订单的商品在当前门店均不可用或无货。`,
+							showCancel: false,
+							confirmText: '知道了'
+						})
+					}
+				} else {
+					uni.showToast({ title: '已成功添加到购物车', icon: 'none' })
+				}
+
+				// 跳转到点单页
+				uni.switchTab({
+					url: '/pages/menu/menu'
+				})
+
+			} catch (e) {
+				uni.hideLoading()
+				console.error('再来一单校验失败:', e)
+				uni.showToast({ title: '校验失败，请稍后再试', icon: 'none' })
 			}
 		}
 	}

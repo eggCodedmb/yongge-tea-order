@@ -431,6 +431,7 @@
 				url: '/order/check_stock',
 				method: 'POST',
 				data: {
+					store_id: appStore.currentStore?.id,
 					items: selectedItems.map(item => ({
 						goods_id: item.id,
 						quantity: item.quantity,
@@ -517,6 +518,7 @@
 				url: '/order/create_new',
 				method: 'POST',
 				data: {
+					store_id: appStore.currentStore?.id,
 					items: cartStore.items.filter(i => i.selected),
 					order_type: appStore.orderMode === 'self-pickup' ? 1 : 2,
 					address_id: appStore.orderMode === 'delivery' ? addressStore.selectedAddress?.id : 0,
@@ -557,12 +559,11 @@
 			uni.hideLoading()
 			console.error('订单创建失败:', e)
 
-			// 判断是否是库存不足错误
 			const errorMsg = e.message || '订单创建失败'
-			if (errorMsg.includes('库存不足')) {
+			if (errorMsg.includes('库存不足') || errorMsg.includes('不在当前门店')) {
 				uni.showModal({
-					title: '库存不足',
-					content: '商品库存不足，请返回购物车修改数量',
+					title: '结算失败',
+					content: errorMsg,
 					confirmText: '返回购物车',
 					success: (res) => {
 						if (res.confirm) {

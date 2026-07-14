@@ -297,7 +297,7 @@
 		return STATIC_URL + cleanUrl
 	}
 
-	function handleAddToCart() {
+	async function handleAddToCart() {
 		if (product.value == null) return
 		
 		// 必选校验
@@ -325,11 +325,15 @@
 			selected: true
 		} as CartItem
 		
-		cartStore.addToCart(item)
-		uni.showToast({ title: '已加入购物车', icon: 'success' })
-		setTimeout(() => {
-			uni.navigateBack()
-		}, 1000)
+		try {
+			await cartStore.addToCart(item)
+			uni.showToast({ title: '已加入购物车', icon: 'success' })
+			setTimeout(() => {
+				uni.navigateBack()
+			}, 1000)
+		} catch (err) {
+			console.error('Add to cart failed:', err)
+		}
 	}
 </script>
 

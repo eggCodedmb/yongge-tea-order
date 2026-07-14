@@ -184,40 +184,7 @@
 	function reOrder(order: any) {
 		const cartStore = useCartStore()
 		const items = order.order_items as any[]
-		
-		items.forEach((item: any) => {
-			// 解析旧订单规格字符串为数组
-			let specsArray: string[] = []
-			if (item.specs) {
-				specsArray = (item.specs as string).split('/')
-			}
-			
-			// 解析保存的规格ID
-			let specIdsArray: number[] = []
-			if (item.spec_ids) {
-				specIdsArray = (item.spec_ids as string).split(',').map((id : string) : number => parseInt(id))
-			}
-			
-			const cartItem: CartItem = {
-				id: item.product?.id || 0,
-				cartId: 0,
-				name: item.product?.goods_name || '未知商品',
-				price: parseFloat(item.price || '0'),
-				quantity: item.quantity,
-				specs: specsArray,
-				spec_ids: specIdsArray,
-				toppings: [],
-				totalPrice: parseFloat(item.price || '0') * item.quantity,
-				image: item.product?.goods_img || '',
-				selected: true
-			} as CartItem
-			cartStore.addToCart(cartItem)
-		})
-		
-		uni.showToast({ title: '已添加到购物车', icon: 'none' })
-		uni.switchTab({
-			url: '/pages/menu/menu'
-		})
+		cartStore.addReorderItems(items, appStore.currentStore?.id || 0)
 	}
 	
 	async function payPendingOrder(order: any) {

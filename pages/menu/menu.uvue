@@ -590,7 +590,7 @@
 		}
 	}
 
-	function handleAddToCart() {
+	async function handleAddToCart() {
 		if (detailProduct.value == null) return
 		
 		// 必选校验
@@ -630,9 +630,13 @@
 			selected: true
 		} as CartItem
 		
-		cartStore.addToCart(item)
-		uni.showToast({ title: '已加入购物车', icon: 'success' })
-		detailPopup.value?.close()
+		try {
+			await cartStore.addToCart(item)
+			uni.showToast({ title: '已加入购物车', icon: 'success' })
+			detailPopup.value?.close()
+		} catch (err) {
+			console.error('Add to cart failed:', err)
+		}
 	}
 
 	function goToStoreList() {
